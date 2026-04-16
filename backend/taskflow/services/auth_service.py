@@ -9,6 +9,16 @@ from taskflow.extensions import db
 from taskflow.models import User
 
 
+def _log_security_event(event: str, detail: str) -> None:
+    current_app.logger.warning(
+        "[SECURITY] %s | ip=%s | path=%s | detail=%s",
+        event,
+        request.remote_addr or "unknown",
+        request.path,
+        detail,
+    )
+
+
 def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
 
@@ -37,8 +47,10 @@ def auth_required(admin_only: bool = False):
         def wrapper(*args, **kwargs):
             user = get_current_user()
             if not user:
+                _log_security_event("AUTH_DENIED", "missing_or_invalid_token")
                 return jsonify({"message": "未登录或登录已失效"}), 401
             if admin_only and not user.is_admin:
+                _log_security_event("PERMISSION_DENIED", f"user_id={user.id}, admin_required=true")
                 return jsonify({"message": "权限不足"}), 403
             request.current_user = user
             return func(*args, **kwargs)

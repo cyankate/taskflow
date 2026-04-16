@@ -631,6 +631,7 @@
             />
           </label>
           <span class="attachment-tip">可上传图片、视频及常见文档，单文件不超过 20MB</span>
+          <div v-if="wikiAttachmentError" class="attachment-error-tip">{{ wikiAttachmentError }}</div>
           <div v-if="(wikiDialog.form.attachments || []).length > 0" class="wiki-attachment-list">
             <div v-for="(item, idx) in wikiDialog.form.attachments" :key="`${item.url}-${idx}`" class="wiki-attachment-item">
               <a :href="item.url" target="_blank" rel="noreferrer">{{ item.name || `附件${idx + 1}` }}</a>
@@ -745,6 +746,7 @@
           </label>
         </div>
         <div class="attachment-tip">支持图片和视频，可多选，单文件不超过 20MB</div>
+        <div v-if="ticketAttachmentError" class="attachment-error-tip">{{ ticketAttachmentError }}</div>
         <div v-if="ticketDetailAttachments.length > 0" class="attachment-grid">
           <div v-for="(item, idx) in ticketDetailAttachments" :key="`${item.url}-${idx}`" class="attachment-card">
             <img
@@ -811,935 +813,106 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
-import api from "./api";
-
-const token = ref(localStorage.getItem("taskflow_token") || "");
-const user = reactive(JSON.parse(localStorage.getItem("taskflow_user") || "{}"));
-const activeTab = ref("dashboard");
-const currentProjectId = ref(null);
-const currentVersionId = ref(null);
-const globalSearchKeyword = ref("");
-
-const loginForm = reactive({ username: "admin", password: "admin123" });
-const users = ref([]);
-const projects = ref([]);
-const versions = ref([]);
-const tickets = ref([]);
-const dashboard = reactive({});
-const stats = reactive({});
-const notification = reactive({ new_ticket_count: 0, overdue_count: 0, soon_due_count: 0 });
-const projectHub = reactive({
-  projects: [],
-  project_id: null,
-  selected_project: null,
-  summary: { total_tickets: 0, pending_tickets: 0, completed_tickets: 0, bug_tickets: 0 },
-  recent_tickets: [],
-  dynamics: []
-});
-const versionForm = reactive({ name: "", description: "" });
-const showVersionCreateForm = ref(false);
-const meta = reactive({
-  positions: ["策划", "美术", "前端程序", "后端程序", "测试"],
-  ticket_types: ["需求单", "BUG单"],
-  ticket_status: ["待处理", "处理中", "待验收", "已完成", "已拒绝", "已延期"],
-  priorities: ["低", "中", "高", "紧急"]
-});
-
-const ticketFilter = reactive({ project_id: null, version_id: null });
-
-const userDialog = reactive({
-  visible: false,
-  form: { id: null, username: "", display_name: "", password: "", position: "策划", is_admin: false }
-});
-const projectDialog = reactive({ visible: false, form: { id: null, name: "", description: "" } });
-const ticketDialog = reactive({
-  visible: false,
-  form: {
-    id: null,
-    title: "",
-    description: "",
-    module: "",
-    ticket_type: "需求单",
-    sub_type: "",
-    project_id: null,
-    version_id: null,
-    status: "待处理",
-    priority: "中",
-    assignee_ids: [],
-    start_time: "",
-    end_time: ""
-  }
-});
-
-const ticketDetail = reactive({
-  visible: false,
-  editing: false,
-  ticket: {},
-  editForm: {
-    id: null,
-    title: "",
-    description: "",
-    module: "",
-    ticket_type: "需求单",
-    sub_type: "",
-    project_id: null,
-    version_id: null,
-    status: "待处理",
-    priority: "中",
-    assignee_ids: [],
-    start_time: "",
-    end_time: "",
-    attachments: []
-  },
-  comments: [],
-  histories: [],
-  newComment: ""
-});
-const imagePreview = reactive({
-  visible: false,
-  url: "",
-  name: ""
-});
-const wikiCategories = ref([]);
-const wikiArticles = ref([]);
-const wikiFilter = reactive({ category_id: null });
-const wikiPage = ref(1);
-const wikiPageSize = 10;
-const wikiEditorRef = ref(null);
-const wikiDialog = reactive({
-  visible: false,
-  form: { id: null, title: "", category_name: "", content: "", attachments: [] },
-});
-const wikiDetail = reactive({
-  visible: false,
-  article: {},
-});
-
-const workloadRows = computed(() =>
-  Object.entries(stats.workload_by_position || {}).map(([position, count]) => ({ position, count }))
-);
-const userInitial = computed(() => {
-  const text = (user.display_name || user.username || "U").toString().trim();
-  return text ? text[0].toUpperCase() : "U";
-});
-const MAX_ATTACHMENT_SIZE_MB = 20;
-const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024;
-const ticketDetailAttachments = computed(() => normalizeAttachments(ticketDetail.ticket.attachments));
-const detailCreatorName = computed(() => {
-  const creatorId = ticketDetail.ticket?.creator_id;
-  if (!creatorId) return "-";
-  const matched = users.value.find((item) => item.id === creatorId);
-  return matched?.display_name || matched?.username || `用户#${creatorId}`;
-});
-const detailAssigneeGroups = computed(() => {
-  const assignees = ticketDetail.ticket?.assignees || [];
-  const grouped = assignees.reduce((acc, item) => {
-    const key = item.position || "未分组";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item.display_name || item.username || `用户#${item.id}`);
-    return acc;
-  }, {});
-  return Object.entries(grouped).map(([position, members]) => ({ position, members }));
-});
-const dashboardTaskPage = ref(1);
-const dashboardTaskPageSize = 8;
-const dashboardBugPage = ref(1);
-const dashboardBugPageSize = 12;
-const dashboardTasks = computed(() => dashboard.my_pending_tasks || []);
-const dashboardBugs = computed(() => dashboard.my_pending_bugs || []);
-
-const pagedDashboardTasks = computed(() => {
-  const start = (dashboardTaskPage.value - 1) * dashboardTaskPageSize;
-  return dashboardTasks.value.slice(start, start + dashboardTaskPageSize);
-});
-
-const pagedDashboardBugs = computed(() => {
-  const start = (dashboardBugPage.value - 1) * dashboardBugPageSize;
-  return dashboardBugs.value.slice(start, start + dashboardBugPageSize);
-});
-
-watch(
-  () => dashboardTasks.value.length,
-  (len) => {
-    const totalPages = Math.max(1, Math.ceil(len / dashboardTaskPageSize));
-    if (dashboardTaskPage.value > totalPages) dashboardTaskPage.value = totalPages;
-  }
-);
-
-watch(
-  () => dashboardBugs.value.length,
-  (len) => {
-    const totalPages = Math.max(1, Math.ceil(len / dashboardBugPageSize));
-    if (dashboardBugPage.value > totalPages) dashboardBugPage.value = totalPages;
-  }
-);
-
-const ticketPage = ref(1);
-const ticketPageSize = ref(20);
-const projectDynamicsPage = ref(1);
-const projectDynamicsPageSize = 12;
-
-const pagedTickets = computed(() => {
-  const list = tickets.value || [];
-  const start = (ticketPage.value - 1) * ticketPageSize.value;
-  return list.slice(start, start + ticketPageSize.value);
-});
-const pagedProjectDynamics = computed(() => {
-  const list = projectHub.dynamics || [];
-  const start = (projectDynamicsPage.value - 1) * projectDynamicsPageSize;
-  return list.slice(start, start + projectDynamicsPageSize);
-});
-const pagedWikiArticles = computed(() => {
-  const list = wikiArticles.value || [];
-  const start = (wikiPage.value - 1) * wikiPageSize;
-  return list.slice(start, start + wikiPageSize);
-});
-
-watch(
-  () => tickets.value.length,
-  (len) => {
-    const totalPages = Math.max(1, Math.ceil(len / ticketPageSize.value) || 1);
-    if (ticketPage.value > totalPages) ticketPage.value = totalPages;
-  }
-);
-
-watch(
-  () => (projectHub.dynamics || []).length,
-  (len) => {
-    const totalPages = Math.max(1, Math.ceil(len / projectDynamicsPageSize));
-    if (projectDynamicsPage.value > totalPages) projectDynamicsPage.value = totalPages;
-  }
-);
-
-watch(
-  () => wikiArticles.value.length,
-  (len) => {
-    const totalPages = Math.max(1, Math.ceil(len / wikiPageSize));
-    if (wikiPage.value > totalPages) wikiPage.value = totalPages;
-  }
-);
-
-watch(
-  () => [!!user.is_admin, activeTab.value],
-  ([isAdmin, tab]) => {
-    if (!isAdmin && (tab === "users" || tab === "projects")) {
-      activeTab.value = "dashboard";
-    }
-  }
-);
-
-function formatDynamicTime(iso) {
-  if (!iso) return "";
-  const s = String(iso);
-  return s.length >= 19 ? s.slice(0, 19).replace("T", " ") : s.replace("T", " ");
-}
-
-function toDateInputFormat(value) {
-  if (!value) return "";
-  const s = String(value);
-  return s.length >= 19 ? s.slice(0, 19) : s;
-}
-
-function normalizeAttachments(list) {
-  if (!Array.isArray(list)) return [];
-  return list
-    .map((item, idx) => {
-      if (typeof item === "string") {
-        return {
-          name: `附件${idx + 1}`,
-          type: item.includes(".mp4") || item.includes("video/") ? "video" : "image",
-          url: item
-        };
-      }
-      if (item && item.url) {
-        return {
-          name: item.name || `附件${idx + 1}`,
-          type: item.type || (item.url.includes("video/") ? "video" : "image"),
-          url: item.url
-        };
-      }
-      return null;
-    })
-    .filter(Boolean);
-}
-
-function isImageAttachment(item) {
-  return (item?.type || "").startsWith("image") || item?.type === "image";
-}
-
-function isVideoAttachment(item) {
-  return (item?.type || "").startsWith("video") || item?.type === "video";
-}
-
-function openImagePreview(item) {
-  imagePreview.url = item?.url || "";
-  imagePreview.name = item?.name || "图片预览";
-  imagePreview.visible = !!imagePreview.url;
-}
-
-function saveAuth(loginUser, jwt) {
-  token.value = jwt;
-  Object.assign(user, loginUser);
-  localStorage.setItem("taskflow_token", jwt);
-  localStorage.setItem("taskflow_user", JSON.stringify(loginUser));
-}
-
-function clearAuth() {
-  token.value = "";
-  Object.keys(user).forEach((k) => delete user[k]);
-  localStorage.removeItem("taskflow_token");
-  localStorage.removeItem("taskflow_user");
-}
-
-async function doLogin() {
-  try {
-    const { data } = await api.post("/auth/login", loginForm);
-    saveAuth(data.user, data.token);
-    await bootstrap();
-    ElMessage.success("登录成功");
-  } catch (err) {
-    ElMessage.error(err?.response?.data?.message || "登录失败");
-  }
-}
-
-function logout() {
-  clearAuth();
-}
-
-function handleUserMenuCommand(command) {
-  if (command === "logout") {
-    logout();
-  }
-}
-
-async function bootstrap() {
-  await Promise.all([loadMeta(), loadUsers(), loadProjects(), loadWikiCategories()]);
-  if (!currentProjectId.value) {
-    const defaultProject = projects.value.find((item) => item.is_default) || projects.value[0];
-    currentProjectId.value = defaultProject?.id || null;
-  }
-  await loadVersions(currentProjectId.value);
-  ticketFilter.project_id = currentProjectId.value;
-  ticketFilter.version_id = currentVersionId.value;
-  await Promise.all([
-    loadDashboard(currentProjectId.value),
-    loadStats(currentProjectId.value),
-    loadNotifications(currentProjectId.value),
-    loadProjectHub(currentProjectId.value),
-    loadTickets(),
-    loadWikiArticles()
-  ]);
-}
-
-async function loadMeta() {
-  const { data } = await api.get("/meta");
-  Object.assign(meta, data);
-}
-
-async function loadUsers() {
-  const { data } = await api.get("/users");
-  users.value = data;
-}
-
-async function loadProjects() {
-  const { data } = await api.get("/projects");
-  projects.value = data;
-  const exists = projects.value.some((item) => item.id === currentProjectId.value);
-  if (!exists) {
-    const defaultProject = projects.value.find((item) => item.is_default) || projects.value[0];
-    currentProjectId.value = defaultProject?.id || null;
-  }
-}
-
-async function loadVersions(projectId = currentProjectId.value) {
-  if (!projectId) {
-    versions.value = [];
-    currentVersionId.value = null;
-    return;
-  }
-  const { data } = await api.get(`/projects/${projectId}/versions`);
-  versions.value = data || [];
-  if (currentVersionId.value && !versions.value.some((item) => item.id === currentVersionId.value)) {
-    currentVersionId.value = null;
-  }
-  if (!currentVersionId.value && versions.value.length > 0) {
-    currentVersionId.value = versions.value[0].id;
-  }
-}
-
-async function loadProjectHub(projectId = currentProjectId.value) {
-  const params = {};
-  if (projectId) params.project_id = projectId;
-  const { data } = await api.get("/project-hub", { params });
-  projectHub.projects = data.projects || [];
-  projectHub.selected_project = data.selected_project;
-  projectHub.summary = data.summary || { total_tickets: 0, pending_tickets: 0, completed_tickets: 0, bug_tickets: 0 };
-  projectHub.recent_tickets = data.recent_tickets || [];
-  projectHub.dynamics = data.dynamics || [];
-  projectDynamicsPage.value = 1;
-  projectHub.project_id = data.selected_project?.id || projectId || null;
-  if (projectHub.project_id && projectHub.project_id !== currentProjectId.value) {
-    currentProjectId.value = projectHub.project_id;
-  }
-  if (!ticketFilter.project_id && currentProjectId.value) {
-    ticketFilter.project_id = currentProjectId.value;
-  }
-}
-
-async function onGlobalProjectChange(value) {
-  currentProjectId.value = value || null;
-  projectHub.project_id = currentProjectId.value;
-  ticketFilter.project_id = currentProjectId.value;
-  await loadVersions(currentProjectId.value);
-  ticketFilter.version_id = currentVersionId.value;
-  ticketPage.value = 1;
-  await Promise.all([
-    loadDashboard(currentProjectId.value),
-    loadStats(currentProjectId.value),
-    loadNotifications(currentProjectId.value),
-    loadProjectHub(currentProjectId.value),
-    loadTickets()
-  ]);
-}
-
-async function onGlobalVersionChange(value) {
-  currentVersionId.value = value || null;
-  ticketFilter.version_id = currentVersionId.value;
-  ticketPage.value = 1;
-  await Promise.all([loadDashboard(currentProjectId.value), loadTickets()]);
-}
-
-async function selectVersionByButton(versionId) {
-  await onGlobalVersionChange(versionId);
-}
-
-
-async function loadTickets() {
-  const params = {};
-  if (ticketFilter.project_id) params.project_id = ticketFilter.project_id;
-  if (ticketFilter.version_id) params.version_id = ticketFilter.version_id;
-  if (globalSearchKeyword.value.trim()) params.keyword = globalSearchKeyword.value.trim();
-  const { data } = await api.get("/tickets", { params });
-  tickets.value = data;
-}
-
-async function runGlobalSearch() {
-  ticketPage.value = 1;
-  await loadTickets();
-}
-
-async function loadDashboard(projectId = currentProjectId.value, versionId = currentVersionId.value) {
-  const params = {};
-  if (projectId) params.project_id = projectId;
-  if (versionId) params.version_id = versionId;
-  const { data } = await api.get("/dashboard", { params });
-  Object.assign(dashboard, data);
-}
-
-async function loadStats(projectId = currentProjectId.value) {
-  const params = {};
-  if (projectId) params.project_id = projectId;
-  const { data } = await api.get("/statistics", { params });
-  Object.assign(stats, data);
-}
-
-async function loadNotifications(projectId = currentProjectId.value) {
-  const params = {};
-  if (projectId) params.project_id = projectId;
-  const { data } = await api.get("/notifications", { params });
-  Object.assign(notification, data);
-}
-
-async function loadWikiCategories() {
-  const { data } = await api.get("/wiki/categories");
-  wikiCategories.value = data || [];
-}
-
-async function loadWikiArticles() {
-  const params = {};
-  if (wikiFilter.category_id) params.category_id = wikiFilter.category_id;
-  const { data } = await api.get("/wiki/articles", { params });
-  wikiArticles.value = data || [];
-}
-
-async function setWikiCategoryFilter(categoryId) {
-  if (wikiFilter.category_id === categoryId) {
-    wikiFilter.category_id = null;
-  } else {
-    wikiFilter.category_id = categoryId;
-  }
-  wikiPage.value = 1;
-  await loadWikiArticles();
-}
-
-async function openWikiDialog(row) {
-  if (row?.id) {
-    const { data } = await api.get(`/wiki/articles/${row.id}`);
-    wikiDialog.form = {
-      id: data.id,
-      title: data.title || "",
-      category_name: data.category_name || "",
-      content: data.content || "",
-      attachments: normalizeAttachments(data.attachments),
-    };
-  } else {
-    wikiDialog.form = {
-      id: null,
-      title: "",
-      category_name: "",
-      content: "",
-      attachments: [],
-    };
-  }
-  wikiDialog.visible = true;
-  await nextTick();
-  if (wikiEditorRef.value) {
-    wikiEditorRef.value.innerHTML = wikiDialog.form.content || "";
-  }
-}
-
-function onWikiEditorInput() {
-  wikiDialog.form.content = wikiEditorRef.value?.innerHTML || "";
-}
-
-function _insertHtmlToWikiEditor(html) {
-  if (!wikiEditorRef.value) return;
-  wikiEditorRef.value.focus();
-  const selection = window.getSelection();
-  if (selection && selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    const container = range.commonAncestorContainer;
-    const inEditor = wikiEditorRef.value.contains(container.nodeType === 1 ? container : container.parentNode);
-    if (inEditor) {
-      range.deleteContents();
-      const temp = document.createElement("div");
-      temp.innerHTML = html;
-      const fragment = document.createDocumentFragment();
-      let node;
-      let lastNode = null;
-      while ((node = temp.firstChild)) {
-        lastNode = fragment.appendChild(node);
-      }
-      range.insertNode(fragment);
-      if (lastNode) {
-        const newRange = document.createRange();
-        newRange.setStartAfter(lastNode);
-        newRange.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(newRange);
-      }
-      onWikiEditorInput();
-      return;
-    }
-  }
-  wikiEditorRef.value.innerHTML = (wikiEditorRef.value.innerHTML || "") + html;
-  onWikiEditorInput();
-}
-
-async function insertWikiMedia(event, mediaType) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
-    ElMessage.warning(`文件超过 ${MAX_ATTACHMENT_SIZE_MB}MB，请压缩后再上传`);
-    event.target.value = "";
-    return;
-  }
-  const allowedPrefix = mediaType === "image" ? "image/" : "video/";
-  if (!file.type.startsWith(allowedPrefix)) {
-    ElMessage.warning(mediaType === "image" ? "请选择图片文件" : "请选择视频文件");
-    event.target.value = "";
-    return;
-  }
-  try {
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    if (mediaType === "image") {
-      _insertHtmlToWikiEditor(`<p><img src="${dataUrl}" alt="${file.name}" style="max-width:100%;" /></p>`);
-    } else {
-      _insertHtmlToWikiEditor(
-        `<p><video src="${dataUrl}" controls style="max-width:100%;height:auto;"></video></p>`
-      );
-    }
-  } catch {
-    ElMessage.error("媒体插入失败，请重试");
-  }
-  event.target.value = "";
-}
-
-async function onWikiAttachmentChange(event) {
-  const files = Array.from(event.target.files || []);
-  if (!files.length) return;
-  const oversize = files.find((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
-  if (oversize) {
-    ElMessage.warning(`文件「${oversize.name}」超过 ${MAX_ATTACHMENT_SIZE_MB}MB`);
-    event.target.value = "";
-    return;
-  }
-  try {
-    const mapped = await Promise.all(
-      files.map(
-        (file) =>
-          new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve({ name: file.name, type: file.type, url: reader.result });
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          })
-      )
-    );
-    wikiDialog.form.attachments = [...(wikiDialog.form.attachments || []), ...mapped];
-  } catch {
-    ElMessage.error("附件读取失败，请重试");
-  }
-  event.target.value = "";
-}
-
-function removeWikiAttachment(index) {
-  wikiDialog.form.attachments.splice(index, 1);
-}
-
-async function saveWikiArticle() {
-  if (!wikiDialog.form.title.trim()) {
-    ElMessage.warning("请输入文章标题");
-    return;
-  }
-  const payload = {
-    title: wikiDialog.form.title.trim(),
-    category_name: (wikiDialog.form.category_name || "").trim(),
-    content: wikiDialog.form.content || "",
-    attachments: wikiDialog.form.attachments || [],
-  };
-  if (wikiDialog.form.id) {
-    await api.put(`/wiki/articles/${wikiDialog.form.id}`, payload);
-  } else {
-    await api.post("/wiki/articles", payload);
-  }
-  wikiDialog.visible = false;
-  await Promise.all([loadWikiCategories(), loadWikiArticles()]);
-  ElMessage.success("文章已保存");
-}
-
-async function openWikiDetail(row) {
-  const { data } = await api.get(`/wiki/articles/${row.id}`);
-  wikiDetail.article = data || {};
-  wikiDetail.visible = true;
-}
-
-function openWikiDetailByRow(row) {
-  if (!row?.id) return;
-  openWikiDetail(row);
-}
-
-async function removeWikiArticle(row) {
-  await ElMessageBox.confirm(`确认删除文章「${row.title}」?`, "提示");
-  await api.delete(`/wiki/articles/${row.id}`);
-  await loadWikiArticles();
-  ElMessage.success("删除成功");
-}
-
-function openUserDialog(row) {
-  userDialog.form = row
-    ? { ...row, password: "" }
-    : { id: null, username: "", display_name: "", password: "", position: meta.positions[0], is_admin: false };
-  userDialog.visible = true;
-}
-
-async function saveUser() {
-  const payload = { ...userDialog.form };
-  if (payload.id) {
-    await api.put(`/users/${payload.id}`, payload);
-  } else {
-    await api.post("/users", payload);
-  }
-  userDialog.visible = false;
-  await loadUsers();
-  ElMessage.success("保存成功");
-}
-
-async function removeUser(row) {
-  await ElMessageBox.confirm(`确认删除用户 ${row.display_name} ?`, "提示");
-  await api.delete(`/users/${row.id}`);
-  await loadUsers();
-  ElMessage.success("删除成功");
-}
-
-function openProjectDialog(row) {
-  projectDialog.form = row ? { ...row } : { id: null, name: "", description: "" };
-  projectDialog.visible = true;
-}
-
-async function saveProject() {
-  if (projectDialog.form.id) {
-    await api.put(`/projects/${projectDialog.form.id}`, projectDialog.form);
-  } else {
-    await api.post("/projects", projectDialog.form);
-  }
-  projectDialog.visible = false;
-  await loadProjects();
-  await onGlobalProjectChange(currentProjectId.value);
-  ElMessage.success("保存成功");
-}
-
-async function removeProject(row) {
-  await ElMessageBox.confirm(`确认删除项目 ${row.name} ?`, "提示");
-  await api.delete(`/projects/${row.id}`);
-  await loadProjects();
-  await onGlobalProjectChange(currentProjectId.value);
-  ElMessage.success("删除成功");
-}
-
-async function setDefaultProject(row) {
-  await api.post(`/projects/${row.id}/set-default`);
-  await loadProjects();
-  if (!currentProjectId.value) currentProjectId.value = row.id;
-  await onGlobalProjectChange(currentProjectId.value);
-  ElMessage.success("已设置默认项目");
-}
-
-async function createVersion() {
-  if (!currentProjectId.value) {
-    ElMessage.warning("请先选择项目");
-    return;
-  }
-  if (!versionForm.name.trim()) {
-    ElMessage.warning("请输入版本名称");
-    return;
-  }
-  await api.post(`/projects/${currentProjectId.value}/versions`, {
-    name: versionForm.name.trim(),
-    description: versionForm.description.trim()
-  });
-  cancelCreateVersion();
-  await Promise.all([loadVersions(currentProjectId.value), loadProjectHub(currentProjectId.value)]);
-  ElMessage.success("版本创建成功");
-}
-
-function cancelCreateVersion() {
-  versionForm.name = "";
-  versionForm.description = "";
-  showVersionCreateForm.value = false;
-}
-
-async function removeVersion(row) {
-  await ElMessageBox.confirm(`确认删除版本 ${row.name} ?`, "提示");
-  await api.delete(`/versions/${row.id}`);
-  if (currentVersionId.value === row.id) currentVersionId.value = null;
-  await Promise.all([loadVersions(currentProjectId.value), loadProjectHub(currentProjectId.value), loadTickets()]);
-  ElMessage.success("版本删除成功");
-}
-
-async function onTicketProjectChange(projectId) {
-  await loadVersions(projectId);
-  ticketDialog.form.version_id = versions.value[0]?.id || null;
-}
-
-async function openTicketDialog(row) {
-  const targetProjectId = row?.project_id || currentProjectId.value || projects.value.find((item) => item.is_default)?.id || projects.value[0]?.id || null;
-  if (targetProjectId && targetProjectId !== currentProjectId.value) {
-    await loadVersions(targetProjectId);
-  }
-  ticketDialog.form = row
-    ? {
-        ...row,
-        assignee_ids: row.assignees?.map((item) => item.id) || []
-      }
-    : {
-        id: null,
-        title: "",
-        description: "",
-        module: "",
-        ticket_type: meta.ticket_types[0],
-        sub_type: "",
-        project_id: targetProjectId,
-        version_id: currentVersionId.value || versions.value[0]?.id || null,
-        status: "待处理",
-        priority: "中",
-        assignee_ids: [],
-        start_time: "",
-        end_time: ""
-      };
-  ticketDialog.visible = true;
-}
-
-async function createQuickTicket(ticketType) {
-  await openTicketDialog();
-  ticketDialog.form.ticket_type = ticketType;
-  ticketDialog.form.project_id = currentProjectId.value || ticketDialog.form.project_id;
-  ticketDialog.form.version_id = currentVersionId.value || ticketDialog.form.version_id;
-}
-
-async function saveTicket() {
-  if (!ticketDialog.form.version_id) {
-    ElMessage.warning("请选择版本");
-    return;
-  }
-  const payload = { ...ticketDialog.form };
-  if (payload.id) {
-    await api.put(`/tickets/${payload.id}`, payload);
-  } else {
-    await api.post("/tickets", payload);
-  }
-  ticketDialog.visible = false;
-  await refreshAllData();
-  ElMessage.success("保存成功");
-}
-
-async function removeTicket(row) {
-  await ElMessageBox.confirm(`确认删除工单 ${row.title} ?`, "提示");
-  await api.delete(`/tickets/${row.id}`);
-  await refreshAllData();
-  ElMessage.success("删除成功");
-}
-
-function handleTicketRowClick(row) {
-  if (!row?.id) return;
-  openTicketDetail(row);
-}
-
-async function openTicketDetail(row) {
-  const { data } = await api.get(`/tickets/${row.id}`);
-  const ticket = data.ticket || {};
-  const targetProjectId = ticket.project_id || currentProjectId.value;
-  if (targetProjectId && targetProjectId !== currentProjectId.value) {
-    await loadVersions(targetProjectId);
-  }
-  ticketDetail.ticket = data.ticket;
-  ticketDetail.editing = false;
-  ticketDetail.editForm = {
-    id: ticket.id || null,
-    title: ticket.title || "",
-    description: ticket.description || "",
-    module: ticket.module || "",
-    ticket_type: ticket.ticket_type || meta.ticket_types[0],
-    sub_type: ticket.sub_type || "",
-    project_id: ticket.project_id || currentProjectId.value || null,
-    version_id: ticket.version_id || versions.value[0]?.id || null,
-    status: ticket.status || "待处理",
-    priority: ticket.priority || "中",
-    assignee_ids: (ticket.assignees || []).map((item) => item.id),
-    start_time: toDateInputFormat(ticket.start_time),
-    end_time: toDateInputFormat(ticket.end_time),
-    attachments: normalizeAttachments(ticket.attachments)
-  };
-  ticketDetail.comments = data.comments;
-  ticketDetail.histories = data.histories;
-  ticketDetail.newComment = "";
-  ticketDetail.visible = true;
-}
-
-async function saveTicketDetailEdit() {
-  if (!ticketDetail.editForm.id) return;
-  if (!ticketDetail.editForm.version_id) {
-    ElMessage.warning("请选择版本");
-    return;
-  }
-  const payload = { ...ticketDetail.editForm };
-  await api.put(`/tickets/${payload.id}`, payload);
-  await Promise.all([openTicketDetail({ id: payload.id }), refreshAllData()]);
-  ElMessage.success("工单更新成功");
-}
-
-async function onDetailProjectChange(projectId) {
-  await loadVersions(projectId);
-  if (!versions.value.some((item) => item.id === ticketDetail.editForm.version_id)) {
-    ticketDetail.editForm.version_id = versions.value[0]?.id || null;
-  }
-}
-
-async function onDetailAttachmentChange(event) {
-  const files = Array.from(event.target.files || []);
-  if (!files.length) return;
-  if (!ticketDetail.ticket?.id) {
-    ElMessage.warning("请先选择工单");
-    event.target.value = "";
-    return;
-  }
-  const invalid = files.find((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/"));
-  if (invalid) {
-    ElMessage.warning("仅支持图片和视频附件");
-    event.target.value = "";
-    return;
-  }
-  const oversize = files.find((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
-  if (oversize) {
-    ElMessage.warning(`文件「${oversize.name}」超过 ${MAX_ATTACHMENT_SIZE_MB}MB，请压缩后再上传`);
-    event.target.value = "";
-    return;
-  }
-  const readPromises = files.map(
-    (file) =>
-      new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () =>
-          resolve({
-            name: file.name,
-            type: file.type,
-            url: reader.result
-          });
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      })
-  );
-  try {
-    const mapped = await Promise.all(readPromises);
-    const nextAttachments = [...normalizeAttachments(ticketDetail.ticket.attachments), ...mapped];
-    await persistTicketAttachments(nextAttachments);
-    ElMessage.success("附件提交成功");
-  } catch {
-    ElMessage.error("附件读取失败，请重试");
-  }
-  event.target.value = "";
-}
-
-async function removeDetailAttachment(index) {
-  if (!ticketDetail.ticket?.id) return;
-  const current = normalizeAttachments(ticketDetail.ticket.attachments);
-  current.splice(index, 1);
-  await persistTicketAttachments(current);
-  ElMessage.success("附件删除成功");
-}
-
-async function persistTicketAttachments(attachments) {
-  if (!ticketDetail.ticket?.id) return;
-  await api.put(`/tickets/${ticketDetail.ticket.id}`, { attachments });
-  ticketDetail.ticket.attachments = attachments;
-  ticketDetail.editForm.attachments = attachments;
-  await refreshAllData();
-}
-
-async function addComment() {
-  if (!ticketDetail.ticket.id || !ticketDetail.newComment.trim()) return;
-  await api.post(`/tickets/${ticketDetail.ticket.id}/comments`, { content: ticketDetail.newComment.trim() });
-  await openTicketDetail(ticketDetail.ticket);
-  await refreshAllData();
-}
-
-async function refreshAllData() {
-  ticketFilter.project_id = currentProjectId.value;
-  await Promise.all([
-    loadTickets(),
-    loadDashboard(currentProjectId.value),
-    loadStats(currentProjectId.value),
-    loadNotifications(currentProjectId.value),
-    loadProjectHub(currentProjectId.value)
-  ]);
-}
-
-onMounted(async () => {
-  if (token.value) {
-    try {
-      await bootstrap();
-    } catch {
-      clearAuth();
-    }
-  }
-});
+import { useTaskflowApp } from "./composables/useTaskflowApp";
+
+const {
+  token,
+  user,
+  activeTab,
+  currentProjectId,
+  currentVersionId,
+  globalSearchKeyword,
+  loginForm,
+  users,
+  projects,
+  versions,
+  tickets,
+  dashboard,
+  stats,
+  notification,
+  projectHub,
+  versionForm,
+  showVersionCreateForm,
+  meta,
+  userDialog,
+  projectDialog,
+  ticketDialog,
+  ticketDetail,
+  imagePreview,
+  wikiCategories,
+  wikiArticles,
+  wikiFilter,
+  wikiPage,
+  wikiPageSize,
+  wikiEditorRef,
+  wikiDialog,
+  wikiAttachmentError,
+  ticketAttachmentError,
+  wikiDetail,
+  workloadRows,
+  userInitial,
+  ticketDetailAttachments,
+  detailCreatorName,
+  detailAssigneeGroups,
+  dashboardTaskPage,
+  dashboardTaskPageSize,
+  dashboardBugPage,
+  dashboardBugPageSize,
+  dashboardTasks,
+  dashboardBugs,
+  pagedDashboardTasks,
+  pagedDashboardBugs,
+  ticketPage,
+  ticketPageSize,
+  projectDynamicsPage,
+  projectDynamicsPageSize,
+  pagedTickets,
+  pagedProjectDynamics,
+  pagedWikiArticles,
+  formatDynamicTime,
+  isImageAttachment,
+  isVideoAttachment,
+  openImagePreview,
+  doLogin,
+  handleUserMenuCommand,
+  onGlobalProjectChange,
+  selectVersionByButton,
+  runGlobalSearch,
+  loadProjectHub,
+  loadWikiCategories,
+  setWikiCategoryFilter,
+  openWikiDialog,
+  onWikiEditorInput,
+  insertWikiMedia,
+  onWikiAttachmentChange,
+  removeWikiAttachment,
+  saveWikiArticle,
+  openWikiDetail,
+  openWikiDetailByRow,
+  removeWikiArticle,
+  openUserDialog,
+  saveUser,
+  removeUser,
+  openProjectDialog,
+  saveProject,
+  removeProject,
+  setDefaultProject,
+  createVersion,
+  cancelCreateVersion,
+  removeVersion,
+  onTicketProjectChange,
+  openTicketDialog,
+  createQuickTicket,
+  saveTicket,
+  removeTicket,
+  handleTicketRowClick,
+  openTicketDetail,
+  saveTicketDetailEdit,
+  onDetailProjectChange,
+  onDetailAttachmentChange,
+  removeDetailAttachment,
+  addComment,
+} = useTaskflowApp();
 </script>
 
 <style scoped>
@@ -2553,6 +1726,18 @@ onMounted(async () => {
   margin-top: 6px;
   color: #909399;
   font-size: 12px;
+}
+
+.attachment-error-tip {
+  margin-top: 6px;
+  color: #f56c6c;
+  font-size: 12px;
+  background: #fff2f0;
+  border: 1px solid #fbc4c4;
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .ticket-attachments-head {

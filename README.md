@@ -102,3 +102,47 @@ npm run dev
 前端默认运行在：`http://127.0.0.1:5173`
 
 前端已配置代理，访问 `/api/*` 会自动转发到后端。
+
+## 七、安全与备份（轻量方案）
+
+- 后端已内置安全响应头（CSP、X-Frame-Options、nosniff 等）
+- 登录与上传接口已启用基础限流（防暴力请求）
+- 附件上传已增加文件头签名（Magic Number）校验
+- 鉴权失败、权限拒绝、限流拦截、上传拦截会写入后端日志（`logs/backend.log`）
+
+### 1) 生产环境建议变量
+
+```bash
+export FLASK_DEBUG=0
+export TASKFLOW_CORS_ALLOWED_ORIGINS="http://192.168.1.10:5173,http://localhost:5173"
+```
+
+也可使用环境文件（推荐）：
+
+```bash
+cp .env.example .env.production
+# 按实际环境编辑 .env.production 后
+./linux_service.sh start
+```
+
+说明：
+
+- `linux_service.sh` 会在启动时自动加载 `.env.production`
+- 可通过 `ENV_FILE=/path/to/your.env ./linux_service.sh start` 指定其他文件
+
+### 2) 一键备份脚本（Linux）
+
+仓库根目录提供：`linux_backup.sh`
+
+```bash
+chmod +x linux_backup.sh
+./linux_backup.sh
+```
+
+默认行为：
+
+- 备份 SQLite 数据库：`backend/instance/taskflow.db`
+- 备份日志目录：`logs/`
+- 备份附件目录（若存在）：`backend/instance/uploads/`
+- 输出压缩包到：`backups/taskflow_backup_时间戳.tar.gz`
+- 默认保留策略：`14` 天且最多 `20` 个备份包

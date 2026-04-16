@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
+import time
 from datetime import timedelta
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import and_, or_
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -26,6 +29,37 @@ from taskflow.services.ticket_service import create_history, validate_ticket_pay
 from taskflow.utils.datetime_utils import now_utc, parse_iso
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
+
+MAX_ATTACHMENT_SIZE_BYTES = 20 * 1024 * 1024
+MAX_ATTACHMENT_COUNT = 50
+MEDIA_MIME_PREFIXES = ("image/", "video/")
+MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".mp4", ".webm", ".mov", ".m4v"}
+DOC_MIME_TYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+}
+DOC_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt"}
+RATE_LIMIT_LOGIN_COUNT = 10
+RATE_LIMIT_UPLOAD_COUNT = 20
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_STORE: dict[str, list[float]] = {}
+
+
+def _log_security_event(event: str, detail: str, level: str = "warning") -> None:
+    user_id = getattr(getattr(request, "current_user", None), "id", None)
+    log_fn = getattr(current_app.logger, level, current_app.logger.warning)
+    log_fn(
+        "[SECURITY] %s | user_id=%s | ip=%s | path=%s | detail=%s",
+        event,
+        user_id if user_id is not None else "anonymous",
+        request.remote_addr or "unknown",
+        request.path,
+        detail,
+    )
 
 
 def _to_utc_naive(dt):
@@ -49,6 +83,191 @@ def _resolve_wiki_category(category_name: str | None) -> WikiCategory | None:
     return category
 
 
+def _estimate_data_url_size(data_url: str) -> int:
+    if not data_url.startswith("data:"):
+        return 0
+    comma_index = data_url.find(",")
+    if comma_index < 0:
+        return 0
+    base64_data = data_url[comma_index + 1 :]
+    if not base64_data:
+        return 0
+    padding = 0
+    if base64_data.endswith("=="):
+        padding = 2
+    elif base64_data.endswith("="):
+        padding = 1
+    return max(0, (len(base64_data) * 3) // 4 - padding)
+
+
+def _decode_data_url(data_url: str) -> tuple[str, bytes] | tuple[None, None]:
+    if not data_url.startswith("data:"):
+        return None, None
+    comma_index = data_url.find(",")
+    if comma_index < 0:
+        return None, None
+    meta = data_url[5:comma_index]
+    mime_type = meta.split(";")[0].strip().lower()
+    if ";base64" not in meta.lower():
+        return None, None
+    payload = data_url[comma_index + 1 :]
+    if not payload:
+        return mime_type, b""
+    try:
+        return mime_type, base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        return None, None
+
+
+def _is_ascii_text(data: bytes) -> bool:
+    if not data:
+        return True
+    if b"\x00" in data:
+        return False
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def _is_magic_signature_valid(mime_type: str, data: bytes) -> bool:
+    mime_type = (mime_type or "").strip().lower()
+    if not data:
+        return False
+    signature_checks = {
+        "image/jpeg": lambda raw: raw.startswith(b"\xff\xd8\xff"),
+        "image/png": lambda raw: raw.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/gif": lambda raw: raw.startswith((b"GIF87a", b"GIF89a")),
+        "image/webp": lambda raw: raw.startswith(b"RIFF") and raw[8:12] == b"WEBP",
+        "image/bmp": lambda raw: raw.startswith(b"BM"),
+        "video/webm": lambda raw: raw.startswith(b"\x1a\x45\xdf\xa3"),
+        "video/mp4": lambda raw: len(raw) > 12 and raw[4:8] == b"ftyp",
+        "video/quicktime": lambda raw: len(raw) > 12 and raw[4:8] == b"ftyp",
+        "application/pdf": lambda raw: raw.startswith(b"%PDF-"),
+        "application/msword": lambda raw: raw.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+        "application/vnd.ms-excel": lambda raw: raw.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": lambda raw: raw.startswith(
+            b"PK\x03\x04"
+        ),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": lambda raw: raw.startswith(b"PK\x03\x04"),
+        "text/plain": _is_ascii_text,
+    }
+    checker = signature_checks.get(mime_type)
+    if checker:
+        return checker(data)
+    if mime_type.startswith("image/"):
+        return any(
+            checks(data)
+            for checks in (
+                signature_checks["image/jpeg"],
+                signature_checks["image/png"],
+                signature_checks["image/gif"],
+                signature_checks["image/webp"],
+                signature_checks["image/bmp"],
+            )
+        )
+    if mime_type.startswith("video/"):
+        return signature_checks["video/webm"](data) or signature_checks["video/mp4"](data)
+    return False
+
+
+def _is_rate_limited(key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+    now_ts = time.time()
+    valid_after = now_ts - window_seconds
+    records = RATE_LIMIT_STORE.get(key, [])
+    records = [value for value in records if value > valid_after]
+    if len(records) >= limit:
+        retry_after = int(records[0] + window_seconds - now_ts) + 1
+        RATE_LIMIT_STORE[key] = records
+        return True, max(retry_after, 1)
+    records.append(now_ts)
+    RATE_LIMIT_STORE[key] = records
+    return False, 0
+
+
+def _enforce_rate_limit(scope: str, limit: int) -> tuple[bool, tuple[Any, int] | None]:
+    identity = str(getattr(getattr(request, "current_user", None), "id", "") or request.remote_addr or "unknown")
+    rate_key = f"{scope}:{identity}"
+    limited, retry_after = _is_rate_limited(rate_key, limit=limit, window_seconds=RATE_LIMIT_WINDOW_SECONDS)
+    if limited:
+        _log_security_event("RATE_LIMIT_BLOCKED", f"scope={scope}, limit={limit}, retry_after={retry_after}s")
+        return False, (
+            jsonify({"message": f"请求过于频繁，请 {retry_after} 秒后重试"}),
+            429,
+        )
+    return True, None
+
+
+def _validate_attachments_payload(attachments: Any, allow_documents: bool = False) -> tuple[bool, str]:
+    if attachments is None:
+        return True, ""
+    if not isinstance(attachments, list):
+        _log_security_event("UPLOAD_REJECTED", "attachments_not_list")
+        return False, "附件格式不合法"
+    if len(attachments) > MAX_ATTACHMENT_COUNT:
+        _log_security_event("UPLOAD_REJECTED", f"attachments_count_exceeded count={len(attachments)}")
+        return False, f"附件数量不能超过 {MAX_ATTACHMENT_COUNT} 个"
+
+    for item in attachments:
+        if not isinstance(item, dict):
+            _log_security_event("UPLOAD_REJECTED", "attachment_item_not_object")
+            return False, "附件项格式不合法"
+
+        url = str(item.get("url", "")).strip()
+        if not url:
+            _log_security_event("UPLOAD_REJECTED", "attachment_url_missing")
+            return False, "附件缺少 URL"
+
+        attachment_type = str(item.get("type", "")).strip().lower()
+        file_name = str(item.get("name", "")).strip().lower()
+
+        if url.startswith("data:"):
+            mime_end = url.find(";")
+            if mime_end > 5:
+                inferred_type = url[5:mime_end].strip().lower()
+                if not attachment_type:
+                    attachment_type = inferred_type
+            if _estimate_data_url_size(url) > MAX_ATTACHMENT_SIZE_BYTES:
+                _log_security_event("UPLOAD_REJECTED", f"attachment_oversize name={file_name or 'unknown'}")
+                return False, "单个附件不能超过 20MB"
+            parsed_type, payload_bytes = _decode_data_url(url)
+            if parsed_type is None:
+                _log_security_event("UPLOAD_REJECTED", "attachment_data_url_decode_failed")
+                return False, "附件编码无效"
+            # Trust explicit attachment type first; fallback to parsed MIME type.
+            check_type = attachment_type or parsed_type
+            if not _is_magic_signature_valid(check_type, payload_bytes):
+                _log_security_event(
+                    "UPLOAD_REJECTED",
+                    f"attachment_magic_mismatch type={check_type or 'unknown'}, name={file_name or 'unknown'}",
+                )
+                return False, "附件内容与类型不匹配"
+        elif not (url.startswith("http://") or url.startswith("https://")):
+            _log_security_event("UPLOAD_REJECTED", "attachment_url_scheme_invalid")
+            return False, "附件 URL 仅支持 data/http/https"
+
+        is_media = any(attachment_type.startswith(prefix) for prefix in MEDIA_MIME_PREFIXES)
+        is_doc = allow_documents and attachment_type in DOC_MIME_TYPES
+        if not (is_media or is_doc):
+            _log_security_event(
+                "UPLOAD_REJECTED",
+                f"attachment_type_invalid type={attachment_type or 'unknown'}, allow_documents={allow_documents}",
+            )
+            return False, "附件类型仅支持图片、视频" if not allow_documents else "附件类型不在允许范围内"
+
+        if file_name and "." in file_name:
+            ext = "." + file_name.rsplit(".", 1)[1]
+            if is_media and ext not in MEDIA_EXTENSIONS:
+                _log_security_event("UPLOAD_REJECTED", f"attachment_ext_invalid ext={ext}, media=true")
+                return False, "附件扩展名不在允许范围内"
+            if is_doc and ext not in DOC_EXTENSIONS:
+                _log_security_event("UPLOAD_REJECTED", f"attachment_ext_invalid ext={ext}, document=true")
+                return False, "附件扩展名不在允许范围内"
+
+    return True, ""
+
+
 @api_bp.get("/health")
 def health() -> Any:
     return jsonify({"status": "ok"})
@@ -56,12 +275,17 @@ def health() -> Any:
 
 @api_bp.post("/auth/login")
 def login() -> Any:
+    passed, limited_response = _enforce_rate_limit("login", RATE_LIMIT_LOGIN_COUNT)
+    if not passed:
+        return limited_response
     payload = request.get_json(silent=True) or {}
     username = payload.get("username", "").strip()
     password = payload.get("password", "")
     user = User.query.filter_by(username=username).first()
     if not user or not check_password_hash(user.password_hash, password):
+        _log_security_event("LOGIN_FAILED", f"username={username or 'empty'}")
         return jsonify({"message": "用户名或密码错误"}), 400
+    _log_security_event("LOGIN_SUCCESS", f"user_id={user.id}", level="info")
     return jsonify({"token": generate_token(user), "user": user.to_dict()})
 
 
@@ -410,6 +634,15 @@ def create_ticket() -> Any:
     if not version or version.project_id != project.id:
         return jsonify({"message": "版本不存在或不属于该项目"}), 400
 
+    attachments = payload.get("attachments", [])
+    if attachments:
+        passed, limited_response = _enforce_rate_limit("ticket_upload", RATE_LIMIT_UPLOAD_COUNT)
+        if not passed:
+            return limited_response
+    is_valid_attachment, attachment_message = _validate_attachments_payload(attachments, allow_documents=False)
+    if not is_valid_attachment:
+        return jsonify({"message": attachment_message}), 400
+
     ticket = Ticket(
         title=payload["title"].strip(),
         description=payload.get("description", "").strip(),
@@ -418,7 +651,7 @@ def create_ticket() -> Any:
         sub_type=payload.get("sub_type", "").strip(),
         status=payload["status"],
         priority=payload["priority"],
-        attachments=json.dumps(payload.get("attachments", []), ensure_ascii=False),
+        attachments=json.dumps(attachments, ensure_ascii=False),
         start_time=parse_iso(payload["start_time"]),
         end_time=parse_iso(payload["end_time"]),
         project_id=project.id,
@@ -447,6 +680,10 @@ def update_ticket(ticket_id: int) -> Any:
         return jsonify({"message": "工单不存在"}), 404
 
     payload = request.get_json(silent=True) or {}
+    if payload.get("attachments"):
+        passed, limited_response = _enforce_rate_limit("ticket_upload", RATE_LIMIT_UPLOAD_COUNT)
+        if not passed:
+            return limited_response
     merged_payload = {
         "title": payload.get("title", ticket.title),
         "module": payload.get("module", ticket.module),
@@ -496,6 +733,9 @@ def update_ticket(ticket_id: int) -> Any:
     if "end_time" in payload:
         ticket.end_time = parse_iso(payload["end_time"])
     if "attachments" in payload:
+        is_valid_attachment, attachment_message = _validate_attachments_payload(payload["attachments"], allow_documents=False)
+        if not is_valid_attachment:
+            return jsonify({"message": attachment_message}), 400
         ticket.attachments = json.dumps(payload["attachments"], ensure_ascii=False)
     if "assignee_ids" in payload:
         old_names = "、".join([user.display_name for user in ticket.assignees]) or "无"
@@ -601,6 +841,13 @@ def create_wiki_article() -> Any:
         return jsonify({"message": "标题不能为空"}), 400
     content = payload.get("content") or ""
     attachments = payload.get("attachments") or []
+    if attachments:
+        passed, limited_response = _enforce_rate_limit("wiki_upload", RATE_LIMIT_UPLOAD_COUNT)
+        if not passed:
+            return limited_response
+    is_valid_attachment, attachment_message = _validate_attachments_payload(attachments, allow_documents=True)
+    if not is_valid_attachment:
+        return jsonify({"message": attachment_message}), 400
     category = _resolve_wiki_category(payload.get("category_name"))
     article = WikiArticle(
         title=title,
@@ -622,13 +869,21 @@ def update_wiki_article(article_id: int) -> Any:
     if not article:
         return jsonify({"message": "文章不存在"}), 404
     payload = request.get_json(silent=True) or {}
+    if payload.get("attachments"):
+        passed, limited_response = _enforce_rate_limit("wiki_upload", RATE_LIMIT_UPLOAD_COUNT)
+        if not passed:
+            return limited_response
     title = (payload.get("title", article.title) or "").strip()
     if not title:
         return jsonify({"message": "标题不能为空"}), 400
     article.title = title
     article.content = payload.get("content", article.content) or ""
     if "attachments" in payload:
-        article.attachments = json.dumps(payload.get("attachments") or [], ensure_ascii=False)
+        attachments = payload.get("attachments") or []
+        is_valid_attachment, attachment_message = _validate_attachments_payload(attachments, allow_documents=True)
+        if not is_valid_attachment:
+            return jsonify({"message": attachment_message}), 400
+        article.attachments = json.dumps(attachments, ensure_ascii=False)
     if "category_name" in payload:
         category = _resolve_wiki_category(payload.get("category_name"))
         article.category_id = category.id if category else None
@@ -644,6 +899,10 @@ def delete_wiki_article(article_id: int) -> Any:
     if not article:
         return jsonify({"message": "文章不存在"}), 404
     if not request.current_user.is_admin and article.creator_id != request.current_user.id:
+        _log_security_event(
+            "PERMISSION_DENIED",
+            f"wiki_delete_forbidden article_id={article_id}, owner_id={article.creator_id}",
+        )
         return jsonify({"message": "仅管理员或创建人可删除"}), 403
     db.session.delete(article)
     db.session.commit()
