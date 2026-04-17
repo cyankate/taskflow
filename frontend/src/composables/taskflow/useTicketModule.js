@@ -12,6 +12,8 @@ export function useTicketModule({
   globalSearchKeyword,
   currentProjectId,
   currentVersionId,
+  selectedTicketIds,
+  batchEdit,
   projects,
   versions,
   meta,
@@ -55,6 +57,8 @@ export function useTicketModule({
       ? {
           ...row,
           assignee_ids: row.assignees?.map((item) => item.id) || [],
+          parent_task_id: row.parent_task_id || null,
+          related_task_id: row.related_task_id || null,
         }
       : {
           id: null,
@@ -68,6 +72,8 @@ export function useTicketModule({
           status: "待处理",
           priority: "中",
           assignee_ids: [],
+          parent_task_id: null,
+          related_task_id: null,
           start_time: "",
           end_time: "",
         };
@@ -130,13 +136,25 @@ export function useTicketModule({
       status: ticket.status || "待处理",
       priority: ticket.priority || "中",
       assignee_ids: (ticket.assignees || []).map((item) => item.id),
+      parent_task_id: ticket.parent_task_id || null,
+      related_task_id: ticket.related_task_id || null,
       start_time: toDateInputFormat(ticket.start_time),
       end_time: toDateInputFormat(ticket.end_time),
       attachments: normalizeAttachments(ticket.attachments),
     };
     ticketDetail.comments = data.comments;
+    ticketDetail.commentReplies = data.comment_replies || [];
+    ticketDetail.checklistItems = data.checklist_items || [];
+    ticketDetail.childTaskTickets = data.child_task_tickets || [];
+    ticketDetail.relatedBugTickets = data.related_bug_tickets || [];
+    ticketDetail.childTaskProgress = data.child_task_progress || { total: 0, done: 0 };
+    ticketDetail.relatedBugProgress = data.related_bug_progress || { total: 0, done: 0 };
     ticketDetail.histories = data.histories;
     ticketDetail.newComment = "";
+    ticketDetail.commentMentionIds = [];
+    ticketDetail.replyDrafts = {};
+    ticketDetail.replyMentionIds = {};
+    ticketDetail.newChecklistItem = "";
     ticketDetail.visible = true;
   }
 
@@ -240,8 +258,89 @@ export function useTicketModule({
 
   async function addComment() {
     if (!ticketDetail.ticket.id || !ticketDetail.newComment.trim()) return;
-    await api.post(`/tickets/${ticketDetail.ticket.id}/comments`, { content: ticketDetail.newComment.trim() });
+    await api.post(`/tickets/${ticketDetail.ticket.id}/comments`, {
+      content: ticketDetail.newComment.trim(),
+      mentions: ticketDetail.commentMentionIds || [],
+    });
+    ticketDetail.commentMentionIds = [];
     await openTicketDetail(ticketDetail.ticket);
+    await refreshAllData();
+  }
+
+  async function addCommentReply(commentId) {
+    if (!ticketDetail.ticket.id || !commentId) return;
+    const content = (ticketDetail.replyDrafts[commentId] || "").trim();
+    if (!content) return;
+    await api.post(`/tickets/${ticketDetail.ticket.id}/comments/${commentId}/replies`, {
+      content,
+      mentions: ticketDetail.replyMentionIds[commentId] || [],
+    });
+    ticketDetail.replyDrafts[commentId] = "";
+    ticketDetail.replyMentionIds[commentId] = [];
+    await openTicketDetail(ticketDetail.ticket);
+    await refreshAllData();
+  }
+
+  async function toggleTicketFollow() {
+    if (!ticketDetail.ticket?.id) return;
+    if (ticketDetail.ticket.is_following) {
+      await api.delete(`/tickets/${ticketDetail.ticket.id}/watch`);
+      ElMessage.success("已取消关注");
+    } else {
+      await api.post(`/tickets/${ticketDetail.ticket.id}/watch`);
+      ElMessage.success("已关注工单");
+    }
+    await openTicketDetail(ticketDetail.ticket);
+    await refreshAllData();
+  }
+
+  async function addChecklistItem() {
+    if (!ticketDetail.ticket?.id) return;
+    const content = (ticketDetail.newChecklistItem || "").trim();
+    if (!content) return;
+    await api.post(`/tickets/${ticketDetail.ticket.id}/checklist`, { content });
+    ticketDetail.newChecklistItem = "";
+    await openTicketDetail(ticketDetail.ticket);
+    await refreshAllData();
+  }
+
+  async function toggleChecklistItem(item) {
+    if (!ticketDetail.ticket?.id || !item?.id) return;
+    await api.patch(`/tickets/${ticketDetail.ticket.id}/checklist/${item.id}`, {
+      is_done: !item.is_done,
+    });
+    await openTicketDetail(ticketDetail.ticket);
+    await refreshAllData();
+  }
+
+  async function removeChecklistItem(item) {
+    if (!ticketDetail.ticket?.id || !item?.id) return;
+    await api.delete(`/tickets/${ticketDetail.ticket.id}/checklist/${item.id}`);
+    await openTicketDetail(ticketDetail.ticket);
+    await refreshAllData();
+  }
+
+  async function batchUpdateTickets() {
+    if (!selectedTicketIds.value.length) {
+      ElMessage.warning("请先选择要批量操作的工单");
+      return;
+    }
+    const payload = { ticket_ids: selectedTicketIds.value };
+    if (batchEdit.status) payload.status = batchEdit.status;
+    if (batchEdit.priority) payload.priority = batchEdit.priority;
+    if (Array.isArray(batchEdit.assignee_ids) && batchEdit.assignee_ids.length) {
+      payload.assignee_ids = batchEdit.assignee_ids;
+    }
+    if (!payload.status && !payload.priority && !payload.assignee_ids) {
+      ElMessage.warning("请选择至少一项批量更新字段");
+      return;
+    }
+    const { data } = await api.post("/tickets/batch-update", payload);
+    ElMessage.success(`批量更新完成（${data.updated_count || 0} 条）`);
+    selectedTicketIds.value = [];
+    batchEdit.status = "";
+    batchEdit.priority = "";
+    batchEdit.assignee_ids = [];
     await refreshAllData();
   }
 
@@ -261,5 +360,11 @@ export function useTicketModule({
     removeDetailAttachment,
     persistTicketAttachments,
     addComment,
+    addCommentReply,
+    toggleTicketFollow,
+    addChecklistItem,
+    toggleChecklistItem,
+    removeChecklistItem,
+    batchUpdateTickets,
   };
 }

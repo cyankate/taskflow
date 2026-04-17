@@ -1,3 +1,5 @@
+import { reactive } from "vue";
+
 export function useProjectModule({
   api,
   ElMessage,
@@ -23,6 +25,13 @@ export function useProjectModule({
   loadWikiCategories,
   loadWikiArticles,
 }) {
+  const notificationFeed = reactive({
+    items: [],
+    total: 0,
+    page: 1,
+    per_page: 20,
+  });
+
   async function loadMeta() {
     const { data } = await api.get("/meta");
     Object.assign(meta, data);
@@ -98,6 +107,29 @@ export function useProjectModule({
     if (projectId) params.project_id = projectId;
     const { data } = await api.get("/notifications", { params });
     Object.assign(notification, data);
+  }
+
+  async function loadNotificationFeed(page = 1) {
+    const { data } = await api.get("/notification-feed", {
+      params: { page, per_page: notificationFeed.per_page },
+    });
+    notificationFeed.items = data.items || [];
+    notificationFeed.total = data.total || 0;
+    notificationFeed.page = data.page || page;
+    notificationFeed.per_page = data.per_page || 20;
+  }
+
+  async function markNotificationRead(id) {
+    await api.post(`/notifications/${id}/read`);
+    await loadNotifications(currentProjectId.value);
+    await loadNotificationFeed(notificationFeed.page);
+  }
+
+  async function markAllNotificationsRead() {
+    await api.post("/notifications/read-all");
+    await loadNotifications(currentProjectId.value);
+    await loadNotificationFeed(notificationFeed.page);
+    ElMessage.success("已全部标为已读");
   }
 
   async function onGlobalProjectChange(value) {
@@ -246,6 +278,10 @@ export function useProjectModule({
     loadDashboard,
     loadStats,
     loadNotifications,
+    notificationFeed,
+    loadNotificationFeed,
+    markNotificationRead,
+    markAllNotificationsRead,
     onGlobalProjectChange,
     onGlobalVersionChange,
     selectVersionByButton,

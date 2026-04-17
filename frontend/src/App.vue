@@ -34,11 +34,11 @@
             placeholder="搜索标题、描述、模块"
             clearable
             class="global-search-input"
-            @keyup.enter="runGlobalSearch"
-            @clear="runGlobalSearch"
+            @keyup.enter="runTopbarSearch"
+            @clear="runTopbarSearch"
           >
             <template #append>
-              <el-button @click="runGlobalSearch">搜索</el-button>
+              <el-button @click="runTopbarSearch">搜索</el-button>
             </template>
           </el-input>
           <el-button type="primary" plain @click="createQuickTicket('需求单')">创建任务</el-button>
@@ -46,6 +46,16 @@
         </div>
 
         <div class="topbar-right">
+          <el-badge
+            class="topbar-notify-badge"
+            :value="notification.unread_notification_count"
+            :hidden="!notification.unread_notification_count"
+            :max="99"
+          >
+            <el-button circle text class="topbar-notify-btn" title="通知" @click="openNotificationCenter">
+              <span class="notify-bell-icon" aria-hidden="true">🔔</span>
+            </el-button>
+          </el-badge>
           <el-dropdown trigger="click" @command="handleUserMenuCommand">
             <div class="user-menu-trigger">
               <el-avatar :size="30" class="user-avatar">{{ userInitial }}</el-avatar>
@@ -137,14 +147,14 @@
                   :data="pagedDashboardTasks"
                   stripe
                   max-height="390"
-                  class="clickable-ticket-table"
+                  class="clickable-ticket-table dashboard-main-table"
                   @row-click="handleTicketRowClick"
                 >
-                  <el-table-column prop="title" label="标题" show-overflow-tooltip />
-                  <el-table-column prop="status" label="状态" width="120" />
-                  <el-table-column prop="priority" label="优先级" width="100" />
-                  <el-table-column label="截止时间" width="220">
-                    <template #default="scope">{{ formatDynamicTime(scope.row.end_time) }}</template>
+                  <el-table-column prop="title" label="标题" min-width="230" show-overflow-tooltip />
+                  <el-table-column prop="status" label="状态" width="88" />
+                  <el-table-column prop="priority" label="优先级" width="72" />
+                  <el-table-column label="截止" width="140">
+                    <template #default="scope">{{ formatDeadlineSlot(scope.row.end_time) }}</template>
                   </el-table-column>
                 </el-table>
                 <div v-if="dashboardTasks.length > dashboardTaskPageSize" class="dashboard-pagination">
@@ -182,14 +192,14 @@
                   :data="pagedDashboardBugs"
                   stripe
                   max-height="460"
-                  class="clickable-ticket-table"
+                  class="clickable-ticket-table dashboard-main-table"
                   @row-click="handleTicketRowClick"
                 >
-                  <el-table-column prop="title" label="标题" show-overflow-tooltip />
-                  <el-table-column prop="status" label="状态" width="120" />
-                  <el-table-column prop="priority" label="优先级" width="100" />
-                  <el-table-column label="截止时间" width="220">
-                    <template #default="scope">{{ formatDynamicTime(scope.row.end_time) }}</template>
+                  <el-table-column prop="title" label="标题" min-width="230" show-overflow-tooltip />
+                  <el-table-column prop="status" label="状态" width="88" />
+                  <el-table-column prop="priority" label="优先级" width="72" />
+                  <el-table-column label="截止" width="140">
+                    <template #default="scope">{{ formatDeadlineSlot(scope.row.end_time) }}</template>
                   </el-table-column>
                 </el-table>
                 <div v-if="dashboardBugs.length > dashboardBugPageSize" class="dashboard-pagination">
@@ -270,6 +280,108 @@
           <section v-show="activeTab === 'project_hub'">
           <div class="project-hub-main">
             <div class="project-hub-main-column">
+              <el-card class="project-hub-tickets-card">
+                <template #header>
+                  <div class="project-hub-card-head project-hub-tickets-head">
+                    <span class="dashboard-panel-title">工单</span>
+                    <el-radio-group v-model="projectHubTicketViewMode" size="small" class="project-hub-view-toggle">
+                      <el-radio-button label="list">列表</el-radio-button>
+                      <el-radio-button label="kanban">看板</el-radio-button>
+                    </el-radio-group>
+                    <span class="project-hub-muted">共 {{ tickets.length }} 条</span>
+                  </div>
+                </template>
+                <div v-if="searchResultTip" class="ticket-search-floating">
+                  <span>{{ searchResultTip }}</span>
+                  <button class="ticket-search-clear-btn" title="清除搜索" @click="clearTopbarSearch">×</button>
+                </div>
+                <div class="ticket-batch-bar">
+                  <span class="ticket-batch-label">已选 {{ selectedTicketIds.length }} 条</span>
+                  <el-select v-model="batchEdit.status" clearable placeholder="批量状态" class="ticket-batch-select">
+                    <el-option v-for="item in meta.ticket_status" :key="item" :label="item" :value="item" />
+                  </el-select>
+                  <el-select v-model="batchEdit.priority" clearable placeholder="批量优先级" class="ticket-batch-select">
+                    <el-option v-for="item in meta.priorities" :key="item" :label="item" :value="item" />
+                  </el-select>
+                  <el-select
+                    v-model="batchEdit.assignee_ids"
+                    multiple
+                    clearable
+                    collapse-tags
+                    collapse-tags-tooltip
+                    placeholder="批量负责人"
+                    class="ticket-batch-select assignee"
+                  >
+                    <el-option
+                      v-for="item in users"
+                      :key="item.id"
+                      :label="item.display_name || item.username"
+                      :value="item.id"
+                    />
+                  </el-select>
+                  <el-button type="primary" plain :disabled="!selectedTicketIds.length" @click="submitBatchEdit">批量应用</el-button>
+                </div>
+                <div v-show="projectHubTicketViewMode === 'list'" class="table-scroll-inner">
+                  <el-table
+                    :data="pagedTickets"
+                    stripe
+                    class="clickable-ticket-table dashboard-main-table"
+                    @selection-change="onProjectHubSelectionChange"
+                    @row-click="handleTicketRowClick"
+                  >
+                    <el-table-column type="selection" width="44" />
+                    <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
+                    <el-table-column prop="ticket_type" label="类型" width="88" />
+                    <el-table-column prop="status" label="状态" width="100" />
+                    <el-table-column prop="priority" label="优先级" width="80" />
+                    <el-table-column label="负责人" min-width="120" show-overflow-tooltip>
+                      <template #default="scope">{{ scope.row.assignees.map((x) => x.display_name).join("、") || "—" }}</template>
+                    </el-table-column>
+                    <el-table-column label="截止" width="160">
+                      <template #default="scope">{{ formatDynamicTime(scope.row.end_time) }}</template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="200" fixed="right">
+                      <template #default="scope">
+                        <el-button link type="primary" @click.stop="openTicketDialog(scope.row)">编辑</el-button>
+                        <el-button link type="success" @click.stop="openTicketDetail(scope.row)">详情</el-button>
+                        <el-button link type="danger" @click.stop="removeTicket(scope.row)">删除</el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+                <div v-show="projectHubTicketViewMode === 'kanban'" class="project-kanban">
+                  <div v-for="col in kanbanColumns" :key="col.status" class="project-kanban-column">
+                    <div class="project-kanban-column-head">{{ col.status }} · {{ col.tickets.length }}</div>
+                    <div class="project-kanban-cards">
+                      <div
+                        v-for="t in col.tickets"
+                        :key="t.id"
+                        class="project-kanban-card"
+                        @click="handleTicketRowClick(t)"
+                      >
+                        <div class="project-kanban-card-title">{{ t.title }}</div>
+                        <div class="project-kanban-card-meta">
+                          <el-tag size="small" effect="plain">{{ t.ticket_type }}</el-tag>
+                          <span class="project-kanban-priority">{{ t.priority }}</span>
+                        </div>
+                      </div>
+                      <el-empty v-if="!col.tickets.length" description="无" :image-size="48" class="project-kanban-empty" />
+                    </div>
+                  </div>
+                </div>
+                <div v-show="projectHubTicketViewMode === 'list'" class="project-hub-pagination">
+                  <el-pagination
+                    background
+                    layout="total, sizes, prev, pager, next"
+                    :total="tickets.length"
+                    :page-sizes="[20, 30, 50, 100]"
+                    v-model:page-size="ticketPageSize"
+                    v-model:current-page="ticketPage"
+                    @size-change="ticketPage = 1"
+                  />
+                </div>
+              </el-card>
+
               <el-card class="project-hub-stats-card">
                 <template #header><div class="dashboard-panel-title">数据与报表</div></template>
                 <el-descriptions border :column="3" class="stats-desc compact">
@@ -295,47 +407,6 @@
                       <el-table-column prop="updated_tickets" label="更新数" />
                     </el-table>
                   </div>
-                </div>
-              </el-card>
-
-              <el-card class="project-hub-tickets-card">
-                <template #header>
-                  <div class="project-hub-card-head">
-                    <span class="dashboard-panel-title">工单列表</span>
-                    <span class="project-hub-muted">共 {{ tickets.length }} 条</span>
-                  </div>
-                </template>
-                <div class="table-scroll-inner">
-                  <el-table :data="pagedTickets" stripe class="clickable-ticket-table" @row-click="handleTicketRowClick">
-                    <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
-                    <el-table-column prop="ticket_type" label="类型" width="88" />
-                    <el-table-column prop="status" label="状态" width="100" />
-                    <el-table-column prop="priority" label="优先级" width="80" />
-                    <el-table-column label="负责人" min-width="120" show-overflow-tooltip>
-                      <template #default="scope">{{ scope.row.assignees.map((x) => x.display_name).join("、") || "—" }}</template>
-                    </el-table-column>
-                    <el-table-column label="截止" width="160">
-                      <template #default="scope">{{ formatDynamicTime(scope.row.end_time) }}</template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="200" fixed="right">
-                      <template #default="scope">
-                        <el-button link type="primary" @click.stop="openTicketDialog(scope.row)">编辑</el-button>
-                        <el-button link type="success" @click.stop="openTicketDetail(scope.row)">详情</el-button>
-                        <el-button link type="danger" @click.stop="removeTicket(scope.row)">删除</el-button>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </div>
-                <div class="project-hub-pagination">
-                  <el-pagination
-                    background
-                    layout="total, sizes, prev, pager, next"
-                    :total="tickets.length"
-                    :page-sizes="[20, 30, 50, 100]"
-                    v-model:page-size="ticketPageSize"
-                    v-model:current-page="ticketPage"
-                    @size-change="ticketPage = 1"
-                  />
                 </div>
               </el-card>
             </div>
@@ -535,6 +606,26 @@
           </el-select>
           <el-input v-model="ticketDialog.form.sub_type" placeholder="子类型" class="w140 ml8" />
         </el-form-item>
+        <el-form-item v-if="ticketDialog.form.ticket_type !== 'BUG单'" label="父任务">
+          <el-select v-model="ticketDialog.form.parent_task_id" clearable filterable placeholder="可选父任务" style="width: 100%">
+            <el-option
+              v-for="item in taskTicketOptions.filter((x) => x.id !== ticketDialog.form.id)"
+              :key="`parent-${item.id}`"
+              :label="`#${item.id} ${item.title}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="ticketDialog.form.ticket_type === 'BUG单'" label="关联任务单">
+          <el-select v-model="ticketDialog.form.related_task_id" clearable filterable placeholder="关联到任务单" style="width: 100%">
+            <el-option
+              v-for="item in taskTicketOptions.filter((x) => x.id !== ticketDialog.form.id)"
+              :key="`related-${item.id}`"
+              :label="`#${item.id} ${item.title}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="项目">
           <el-select v-model="ticketDialog.form.project_id" class="w140" @change="onTicketProjectChange">
             <el-option v-for="item in projects" :key="item.id" :label="item.name" :value="item.id" />
@@ -650,6 +741,15 @@
       <div class="ticket-detail-head">
         <h3 class="ticket-detail-title">{{ ticketDetail.ticket.title }}</h3>
         <div class="ticket-detail-actions">
+          <el-button v-if="ticketDetail.ticket.ticket_type !== 'BUG单'" size="small" plain @click="createSubTaskFromDetail">
+            新建子任务
+          </el-button>
+          <el-button v-if="ticketDetail.ticket.ticket_type !== 'BUG单'" size="small" plain type="warning" @click="createBugFromDetail">
+            新建关联BUG
+          </el-button>
+          <el-button size="small" type="primary" plain @click="toggleTicketFollow">
+            {{ ticketDetail.ticket.is_following ? "取消关注" : "关注工单" }}
+          </el-button>
           <el-button size="small" @click="ticketDetail.editing = !ticketDetail.editing">
             {{ ticketDetail.editing ? "取消编辑" : "编辑工单" }}
           </el-button>
@@ -667,6 +767,16 @@
           <el-descriptions-item label="所属模块">{{ ticketDetail.ticket.module || "-" }}</el-descriptions-item>
           <el-descriptions-item label="版本">{{ ticketDetail.ticket.version_name || "-" }}</el-descriptions-item>
           <el-descriptions-item label="创建人">{{ detailCreatorName }}</el-descriptions-item>
+          <el-descriptions-item label="父任务">
+            <span v-if="ticketDetail.ticket.parent_task_id">#{{ ticketDetail.ticket.parent_task_id }} {{ ticketDetail.ticket.parent_task_title }}</span>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="关联任务单">
+            <span v-if="ticketDetail.ticket.related_task_id">
+              #{{ ticketDetail.ticket.related_task_id }} {{ ticketDetail.ticket.related_task_title }}
+            </span>
+            <span v-else>-</span>
+          </el-descriptions-item>
           <el-descriptions-item label="开始时间">{{ formatDynamicTime(ticketDetail.ticket.start_time) || "-" }}</el-descriptions-item>
           <el-descriptions-item label="完成时间">{{ formatDynamicTime(ticketDetail.ticket.end_time) || "-" }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDynamicTime(ticketDetail.ticket.created_at) || "-" }}</el-descriptions-item>
@@ -682,6 +792,12 @@
             </div>
           </div>
           <el-empty v-else description="暂无负责人" :image-size="40" />
+          <div class="ticket-watcher-line">
+            <span class="ticket-watcher-title">关注人：</span>
+            <span class="ticket-watcher-members">
+              {{ (ticketDetail.ticket.watchers || []).map((x) => x.display_name || x.username).join("、") || "暂无关注" }}
+            </span>
+          </div>
         </div>
 
         <div class="ticket-description-block">
@@ -690,6 +806,41 @@
         </div>
       </div>
       <el-divider />
+
+      <div v-if="ticketDetail.ticket.ticket_type !== 'BUG单'" class="ticket-related-board">
+        <div class="ticket-related-section">
+          <div class="ticket-related-head">
+            <h4>子任务单</h4>
+            <span class="ticket-related-progress">
+              已完成 {{ ticketDetail.childTaskProgress.done || 0 }}/{{ ticketDetail.childTaskProgress.total || 0 }}
+            </span>
+          </div>
+          <div v-if="(ticketDetail.childTaskTickets || []).length" class="ticket-related-list">
+            <div v-for="item in ticketDetail.childTaskTickets" :key="`child-${item.id}`" class="ticket-related-item">
+              <span class="ticket-related-title">#{{ item.id }} {{ item.title }}</span>
+              <el-tag size="small" :type="item.status === '已完成' ? 'success' : 'info'">{{ item.status }}</el-tag>
+            </div>
+          </div>
+          <el-empty v-else description="暂无子任务单" :image-size="42" />
+        </div>
+
+        <div class="ticket-related-section">
+          <div class="ticket-related-head">
+            <h4>关联BUG单</h4>
+            <span class="ticket-related-progress">
+              已完成 {{ ticketDetail.relatedBugProgress.done || 0 }}/{{ ticketDetail.relatedBugProgress.total || 0 }}
+            </span>
+          </div>
+          <div v-if="(ticketDetail.relatedBugTickets || []).length" class="ticket-related-list">
+            <div v-for="item in ticketDetail.relatedBugTickets" :key="`bug-${item.id}`" class="ticket-related-item">
+              <span class="ticket-related-title">#{{ item.id }} {{ item.title }}</span>
+              <el-tag size="small" :type="item.status === '已完成' ? 'success' : 'danger'">{{ item.status }}</el-tag>
+            </div>
+          </div>
+          <el-empty v-else description="暂无关联BUG单" :image-size="42" />
+        </div>
+      </div>
+      <el-divider v-if="ticketDetail.ticket.ticket_type !== 'BUG单'" />
 
       <el-form v-if="ticketDetail.editing" :model="ticketDetail.editForm" label-width="90px" class="ticket-detail-edit-form">
         <el-form-item label="标题"><el-input v-model="ticketDetail.editForm.title" /></el-form-item>
@@ -700,6 +851,26 @@
             <el-option v-for="item in meta.ticket_types" :key="item" :label="item" :value="item" />
           </el-select>
           <el-input v-model="ticketDetail.editForm.sub_type" placeholder="子类型" class="w140 ml8" />
+        </el-form-item>
+        <el-form-item v-if="ticketDetail.editForm.ticket_type !== 'BUG单'" label="父任务">
+          <el-select v-model="ticketDetail.editForm.parent_task_id" clearable filterable placeholder="可选父任务" style="width: 100%">
+            <el-option
+              v-for="item in taskTicketOptions.filter((x) => x.id !== ticketDetail.editForm.id)"
+              :key="`edit-parent-${item.id}`"
+              :label="`#${item.id} ${item.title}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="ticketDetail.editForm.ticket_type === 'BUG单'" label="关联任务单">
+          <el-select v-model="ticketDetail.editForm.related_task_id" clearable filterable placeholder="关联到任务单" style="width: 100%">
+            <el-option
+              v-for="item in taskTicketOptions.filter((x) => x.id !== ticketDetail.editForm.id)"
+              :key="`edit-related-${item.id}`"
+              :label="`#${item.id} ${item.title}`"
+              :value="item.id"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="项目">
           <el-select v-model="ticketDetail.editForm.project_id" class="w140" @change="onDetailProjectChange">
@@ -769,11 +940,75 @@
 
       <el-divider />
       <h4>评论</h4>
-      <el-input v-model="ticketDetail.newComment" type="textarea" placeholder="输入评论，支持@成员文字约定" />
+      <el-input
+        v-model="ticketDetail.newComment"
+        type="textarea"
+        placeholder="输入评论；正文中使用 @姓名 可高亮；下方选择成员将收到站内通知"
+      />
+      <el-select
+        v-model="ticketDetail.commentMentionIds"
+        multiple
+        filterable
+        clearable
+        collapse-tags
+        collapse-tags-tooltip
+        placeholder="选择要@的成员（将收到站内通知）"
+        class="mt8 comment-mention-select"
+        @change="onCommentMentionIdsChange"
+      >
+        <el-option
+          v-for="item in users"
+          :key="item.id"
+          :label="item.display_name || item.username"
+          :value="item.id"
+        />
+      </el-select>
       <el-button class="mt8" type="primary" @click="addComment">提交评论</el-button>
       <el-timeline>
         <el-timeline-item v-for="c in ticketDetail.comments" :key="c.id" :timestamp="formatDynamicTime(c.created_at)">
-          <strong>{{ c.user?.display_name }}：</strong>{{ c.content }}
+          <div class="comment-line">
+            <strong>{{ c.user?.display_name }}：</strong>
+            <span class="comment-text-html" v-html="commentContentWithMentionsHtml(c.content, c.mentions, users)" />
+          </div>
+          <div v-if="mentionDisplayNames(c.mentions, users).length" class="comment-mention-row">
+            <el-tag
+              v-for="name in mentionDisplayNames(c.mentions, users)"
+              :key="`${c.id}-${name}`"
+              size="small"
+              effect="plain"
+              class="comment-mention-tag"
+            >
+              @{{ name }}
+            </el-tag>
+          </div>
+          <div v-if="getCommentReplies(c.id).length" class="comment-reply-list">
+            <div v-for="r in getCommentReplies(c.id)" :key="r.id" class="comment-reply-item">
+              <strong>{{ r.user?.display_name || r.user?.username }}：</strong>
+              <span class="comment-text-html" v-html="commentContentWithMentionsHtml(r.content, r.mentions, users)" />
+            </div>
+          </div>
+          <div class="comment-reply-editor">
+            <el-input v-model="ticketDetail.replyDrafts[c.id]" size="small" placeholder="回复这条评论..." />
+            <el-select
+              v-model="ticketDetail.replyMentionIds[c.id]"
+              multiple
+              clearable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="@成员"
+              size="small"
+              class="comment-reply-mention"
+              @change="(ids) => onReplyMentionIdsChange(c.id, ids)"
+            >
+              <el-option
+                v-for="item in users"
+                :key="item.id"
+                :label="item.display_name || item.username"
+                :value="item.id"
+              />
+            </el-select>
+            <el-button size="small" type="primary" plain @click="addCommentReply(c.id)">回复</el-button>
+          </div>
         </el-timeline-item>
       </el-timeline>
       <h4>修改历史</h4>
@@ -809,6 +1044,48 @@
         <img :src="imagePreview.url" :alt="imagePreview.name || 'preview'" class="image-preview-large" />
       </div>
     </el-dialog>
+
+    <el-drawer v-model="notificationDrawerVisible" size="400px" destroy-on-close>
+      <template #header>
+        <div class="notification-drawer-head">
+          <span>通知中心</span>
+          <el-button
+            v-if="notificationFeed.items.length"
+            size="small"
+            text
+            type="primary"
+            @click="markAllNotificationsRead"
+          >
+            全部已读
+          </el-button>
+        </div>
+      </template>
+      <div v-if="notificationFeed.items.length" class="notification-feed-list">
+        <div
+          v-for="n in notificationFeed.items"
+          :key="n.id"
+          class="notification-feed-item"
+          :class="{ unread: !n.read }"
+          @click="onNotificationItemClick(n)"
+        >
+          <div class="notification-feed-title">{{ n.title }}</div>
+          <div v-if="n.body" class="notification-feed-body">{{ n.body }}</div>
+          <div class="notification-feed-time">{{ formatDynamicTime(n.created_at) }}</div>
+        </div>
+      </div>
+      <el-empty v-else description="暂无通知" :image-size="72" />
+      <div v-if="notificationFeed.total > notificationFeed.per_page" class="notification-feed-pagination">
+        <el-pagination
+          background
+          small
+          layout="prev, pager, next"
+          :total="notificationFeed.total"
+          :page-size="notificationFeed.per_page"
+          :current-page="notificationFeed.page"
+          @current-change="onNotificationFeedPageChange"
+        />
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -822,6 +1099,7 @@ const {
   currentProjectId,
   currentVersionId,
   globalSearchKeyword,
+  searchResultTip,
   loginForm,
   users,
   projects,
@@ -830,6 +1108,14 @@ const {
   dashboard,
   stats,
   notification,
+  notificationDrawerVisible,
+  notificationFeed,
+  projectHubTicketViewMode,
+  kanbanColumns,
+  openNotificationCenter,
+  onNotificationItemClick,
+  onNotificationFeedPageChange,
+  markAllNotificationsRead,
   projectHub,
   versionForm,
   showVersionCreateForm,
@@ -838,6 +1124,8 @@ const {
   projectDialog,
   ticketDialog,
   ticketDetail,
+  selectedTicketIds,
+  batchEdit,
   imagePreview,
   wikiCategories,
   wikiArticles,
@@ -854,6 +1142,7 @@ const {
   ticketDetailAttachments,
   detailCreatorName,
   detailAssigneeGroups,
+  taskTicketOptions,
   dashboardTaskPage,
   dashboardTaskPageSize,
   dashboardBugPage,
@@ -870,6 +1159,7 @@ const {
   pagedProjectDynamics,
   pagedWikiArticles,
   formatDynamicTime,
+  formatDeadlineSlot,
   isImageAttachment,
   isVideoAttachment,
   openImagePreview,
@@ -878,6 +1168,8 @@ const {
   onGlobalProjectChange,
   selectVersionByButton,
   runGlobalSearch,
+  runTopbarSearch,
+  clearTopbarSearch,
   loadProjectHub,
   loadWikiCategories,
   setWikiCategoryFilter,
@@ -912,6 +1204,17 @@ const {
   onDetailAttachmentChange,
   removeDetailAttachment,
   addComment,
+  toggleTicketFollow,
+  addCommentReply,
+  createSubTaskFromDetail,
+  createBugFromDetail,
+  onProjectHubSelectionChange,
+  submitBatchEdit,
+  onCommentMentionIdsChange,
+  onReplyMentionIdsChange,
+  getCommentReplies,
+  commentContentWithMentionsHtml,
+  mentionDisplayNames,
 } = useTaskflowApp();
 </script>
 
@@ -976,6 +1279,41 @@ const {
   gap: 10px;
   margin-left: auto;
   flex-wrap: nowrap;
+}
+
+.project-hub-tickets-card {
+  position: relative;
+}
+
+.ticket-search-floating {
+  position: absolute;
+  right: 14px;
+  top: 58px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #b3d8ff;
+  background: #ecf5ff;
+  color: #409eff;
+  font-size: 12px;
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.18);
+}
+
+.ticket-search-clear-btn {
+  border: 0;
+  background: transparent;
+  color: #409eff;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.ticket-search-clear-btn:hover {
+  color: #337ecc;
 }
 
 .topbar-right {
@@ -1232,6 +1570,27 @@ const {
 
 .table-scroll-inner {
   min-height: 0;
+}
+
+.ticket-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.ticket-batch-label {
+  font-size: 12px;
+  color: #606266;
+}
+
+.ticket-batch-select {
+  width: 130px;
+}
+
+.ticket-batch-select.assignee {
+  width: 200px;
 }
 
 .project-hub-pagination {
@@ -1808,6 +2167,10 @@ const {
   cursor: pointer;
 }
 
+.dashboard-main-table :deep(.el-table__cell) {
+  font-size: 13px;
+}
+
 .wiki-card {
   min-height: 620px;
   padding-bottom: 8px;
@@ -1901,5 +2264,268 @@ const {
 .wiki-detail-content :deep(img),
 .wiki-detail-content :deep(video) {
   max-width: 100%;
+}
+
+.topbar-notify-badge {
+  margin-right: 8px;
+}
+
+.topbar-notify-btn {
+  font-size: 18px;
+  padding: 6px;
+}
+
+.notify-bell-icon {
+  line-height: 1;
+}
+
+.project-hub-tickets-head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.project-hub-view-toggle {
+  margin-left: auto;
+}
+
+.project-kanban {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  min-height: 280px;
+}
+
+.project-kanban-column {
+  flex: 0 0 220px;
+  max-height: 520px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.project-kanban-column-head {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fff;
+  border-radius: 8px 8px 0 0;
+}
+
+.project-kanban-cards {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-kanban-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.project-kanban-card:hover {
+  border-color: #c6e2ff;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.12);
+}
+
+.project-kanban-card-title {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #303133;
+  display: -webkit-box;
+  line-clamp: 3;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.project-kanban-card-meta {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.project-kanban-priority {
+  margin-left: auto;
+}
+
+.project-kanban-empty {
+  padding: 8px 0;
+}
+
+.comment-mention-select {
+  width: 100%;
+}
+
+.comment-line {
+  line-height: 1.55;
+}
+
+.comment-text-html :deep(.mention-highlight) {
+  color: #409eff;
+  font-weight: 600;
+}
+
+.comment-mention-row {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.comment-mention-tag {
+  border-color: #b3d8ff;
+  color: #337ecc;
+  background: #ecf5ff;
+}
+
+.comment-reply-list {
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 2px solid #ebeef5;
+}
+
+.comment-reply-item {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.comment-reply-editor {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comment-reply-mention {
+  width: 180px;
+}
+
+.ticket-checklist-block {
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+}
+
+.ticket-checklist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ticket-checklist-progress {
+  font-size: 12px;
+  color: #909399;
+}
+
+.ticket-checklist-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ticket-checklist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ticket-checklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #f0f2f5;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.ticket-checklist-item .done {
+  text-decoration: line-through;
+  color: #909399;
+}
+
+.ticket-watcher-line {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+}
+
+.ticket-watcher-title {
+  color: #909399;
+}
+
+.notification-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.notification-feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notification-feed-item {
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: #fff;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.notification-feed-item.unread {
+  background: #f0f9ff;
+  border-color: #b3d8ff;
+}
+
+.notification-feed-item:hover {
+  border-color: #409eff;
+}
+
+.notification-feed-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #303133;
+}
+
+.notification-feed-body {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.45;
+}
+
+.notification-feed-time {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.notification-feed-pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
 }
 </style>

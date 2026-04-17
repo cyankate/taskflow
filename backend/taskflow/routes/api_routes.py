@@ -8,18 +8,21 @@ from datetime import timedelta
 from typing import Any
 
 from flask import Blueprint, current_app, jsonify, request
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from taskflow.constants import POSITIONS, PRIORITIES, TICKET_STATUS, TICKET_TYPES
 from taskflow.extensions import db
 from taskflow.models import (
     Comment,
+    CommentReply,
     Project,
     ProjectVersion,
     Ticket,
+    TicketChecklistItem,
     TicketHistory,
     User,
+    UserNotification,
     WikiArticle,
     WikiCategory,
     ticket_assignees,
@@ -68,6 +71,81 @@ def _to_utc_naive(dt):
     if dt.tzinfo is None:
         return dt
     return dt.astimezone(now_utc().tzinfo).replace(tzinfo=None)
+
+
+def _push_user_notification(user_id: int, kind: str, title: str, body: str, ticket_id: int | None) -> None:
+    note = UserNotification(
+        user_id=user_id,
+        kind=kind,
+        title=title[:255],
+        body=body or "",
+        ticket_id=ticket_id,
+    )
+    db.session.add(note)
+
+
+def _notify_ticket_watchers(ticket: Ticket, actor_user_id: int, kind: str, title: str, body: str = "") -> None:
+    for watcher in ticket.watchers:
+        if watcher.id == actor_user_id:
+            continue
+        _push_user_notification(watcher.id, kind, title, body or ticket.title[:200], ticket.id)
+
+
+def _resolve_mention_user_ids(raw_mentions: Any) -> set[int]:
+    mention_raw = raw_mentions if isinstance(raw_mentions, list) else []
+    mention_ids: set[int] = set()
+    for item in mention_raw:
+        try:
+            mention_ids.add(int(item))
+        except (TypeError, ValueError):
+            continue
+    if not mention_ids:
+        return set()
+    valid_users = User.query.filter(User.id.in_(mention_ids)).all()
+    return {u.id for u in valid_users}
+
+
+def _resolve_ticket_links(
+    ticket_type: str,
+    parent_task_id_raw: Any,
+    related_task_id_raw: Any,
+    current_ticket_id: int | None = None,
+) -> tuple[int | None, int | None, str | None]:
+    def _to_int_or_none(value: Any) -> int | None:
+        if value in (None, "", 0, "0"):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    parent_task_id = _to_int_or_none(parent_task_id_raw)
+    related_task_id = _to_int_or_none(related_task_id_raw)
+
+    if ticket_type == "BUG单" and parent_task_id is not None:
+        return None, None, "BUG单不能设置父任务"
+    if ticket_type != "BUG单" and related_task_id is not None:
+        return None, None, "仅BUG单可设置关联任务单"
+
+    if parent_task_id is not None:
+        parent_ticket = db.session.get(Ticket, parent_task_id)
+        if not parent_ticket:
+            return None, None, "父任务不存在"
+        if parent_ticket.ticket_type == "BUG单":
+            return None, None, "父任务必须是任务单"
+        if current_ticket_id and parent_ticket.id == current_ticket_id:
+            return None, None, "父任务不能是自己"
+
+    if related_task_id is not None:
+        related_ticket = db.session.get(Ticket, related_task_id)
+        if not related_ticket:
+            return None, None, "关联任务单不存在"
+        if related_ticket.ticket_type == "BUG单":
+            return None, None, "关联对象必须是任务单"
+        if current_ticket_id and related_ticket.id == current_ticket_id:
+            return None, None, "关联任务单不能是自己"
+
+    return parent_task_id, related_task_id, None
 
 
 def _resolve_wiki_category(category_name: str | None) -> WikiCategory | None:
@@ -616,7 +694,7 @@ def list_tickets() -> Any:
         )
 
     tickets = query.order_by(Ticket.updated_at.desc()).all()
-    return jsonify([ticket.to_dict() for ticket in tickets])
+    return jsonify([ticket.to_dict(current_user_id=request.current_user.id) for ticket in tickets])
 
 
 @api_bp.post("/tickets")
@@ -633,6 +711,21 @@ def create_ticket() -> Any:
     version = db.session.get(ProjectVersion, int(payload["version_id"]))
     if not version or version.project_id != project.id:
         return jsonify({"message": "版本不存在或不属于该项目"}), 400
+    parent_task_id, related_task_id, link_error = _resolve_ticket_links(
+        payload["ticket_type"],
+        payload.get("parent_task_id"),
+        payload.get("related_task_id"),
+    )
+    if link_error:
+        return jsonify({"message": link_error}), 400
+    if parent_task_id:
+        parent_ticket = db.session.get(Ticket, parent_task_id)
+        if parent_ticket and parent_ticket.project_id != project.id:
+            return jsonify({"message": "父任务必须属于同一项目"}), 400
+    if related_task_id:
+        related_ticket = db.session.get(Ticket, related_task_id)
+        if related_ticket and related_ticket.project_id != project.id:
+            return jsonify({"message": "关联任务单必须属于同一项目"}), 400
 
     attachments = payload.get("attachments", [])
     if attachments:
@@ -656,6 +749,8 @@ def create_ticket() -> Any:
         end_time=parse_iso(payload["end_time"]),
         project_id=project.id,
         version_id=version.id,
+        parent_task_id=parent_task_id,
+        related_task_id=related_task_id,
         creator_id=request.current_user.id,
     )
     assignee_ids = payload.get("assignee_ids", [])
@@ -664,12 +759,22 @@ def create_ticket() -> Any:
     else:
         # Fallback: ensure creator can see newly created tickets in "我的工作台".
         ticket.assignees = [request.current_user]
+    ticket.watchers = list({user.id: user for user in [request.current_user, *ticket.assignees]}.values())
 
     db.session.add(ticket)
     db.session.flush()
     create_history(ticket, request.current_user.id, "创建工单")
+    for assignee in ticket.assignees:
+        if assignee.id != request.current_user.id:
+            _push_user_notification(
+                assignee.id,
+                "assign",
+                "你被指派为工单负责人",
+                ticket.title[:200],
+                ticket.id,
+            )
     db.session.commit()
-    return jsonify(ticket.to_dict()), 201
+    return jsonify(ticket.to_dict(current_user_id=request.current_user.id)), 201
 
 
 @api_bp.put("/tickets/<int:ticket_id>")
@@ -692,6 +797,8 @@ def update_ticket(ticket_id: int) -> Any:
         "priority": payload.get("priority", ticket.priority),
         "project_id": payload.get("project_id", ticket.project_id),
         "version_id": payload.get("version_id", ticket.version_id),
+        "parent_task_id": payload.get("parent_task_id", ticket.parent_task_id),
+        "related_task_id": payload.get("related_task_id", ticket.related_task_id),
         "start_time": payload.get("start_time", ticket.start_time.isoformat()),
         "end_time": payload.get("end_time", ticket.end_time.isoformat()),
     }
@@ -703,6 +810,22 @@ def update_ticket(ticket_id: int) -> Any:
     merged_version = db.session.get(ProjectVersion, merged_version_id)
     if not merged_version or merged_version.project_id != merged_project_id:
         return jsonify({"message": "版本不存在或不属于该项目"}), 400
+    resolved_parent_task_id, resolved_related_task_id, link_error = _resolve_ticket_links(
+        merged_payload["ticket_type"],
+        merged_payload.get("parent_task_id"),
+        merged_payload.get("related_task_id"),
+        current_ticket_id=ticket.id,
+    )
+    if link_error:
+        return jsonify({"message": link_error}), 400
+    if resolved_parent_task_id:
+        parent_ticket = db.session.get(Ticket, resolved_parent_task_id)
+        if parent_ticket and parent_ticket.project_id != merged_project_id:
+            return jsonify({"message": "父任务必须属于同一项目"}), 400
+    if resolved_related_task_id:
+        related_ticket = db.session.get(Ticket, resolved_related_task_id)
+        if related_ticket and related_ticket.project_id != merged_project_id:
+            return jsonify({"message": "关联任务单必须属于同一项目"}), 400
 
     field_labels = {
         "title": "标题",
@@ -712,6 +835,8 @@ def update_ticket(ticket_id: int) -> Any:
         "sub_type": "子类型",
         "status": "状态",
         "priority": "优先级",
+        "parent_task_id": "父任务",
+        "related_task_id": "关联任务单",
     }
     changes: list[str] = []
     for field in ["title", "description", "module", "ticket_type", "sub_type", "status", "priority"]:
@@ -728,6 +853,18 @@ def update_ticket(ticket_id: int) -> Any:
     if ticket.version_id != merged_version_id:
         ticket.version_id = merged_version_id
         changes.append("所属版本 已更新")
+    if ticket.parent_task_id != resolved_parent_task_id:
+        old_label = ticket.parent_task.title if ticket.parent_task else "无"
+        new_ticket = db.session.get(Ticket, resolved_parent_task_id) if resolved_parent_task_id else None
+        new_label = new_ticket.title if new_ticket else "无"
+        ticket.parent_task_id = resolved_parent_task_id
+        changes.append(f"父任务: {old_label} -> {new_label}")
+    if ticket.related_task_id != resolved_related_task_id:
+        old_label = ticket.related_task.title if ticket.related_task else "无"
+        new_ticket = db.session.get(Ticket, resolved_related_task_id) if resolved_related_task_id else None
+        new_label = new_ticket.title if new_ticket else "无"
+        ticket.related_task_id = resolved_related_task_id
+        changes.append(f"关联任务单: {old_label} -> {new_label}")
     if "start_time" in payload:
         ticket.start_time = parse_iso(payload["start_time"])
     if "end_time" in payload:
@@ -738,17 +875,89 @@ def update_ticket(ticket_id: int) -> Any:
             return jsonify({"message": attachment_message}), 400
         ticket.attachments = json.dumps(payload["attachments"], ensure_ascii=False)
     if "assignee_ids" in payload:
+        old_assignee_ids = {u.id for u in ticket.assignees}
         old_names = "、".join([user.display_name for user in ticket.assignees]) or "无"
         ticket.assignees = User.query.filter(User.id.in_(payload["assignee_ids"])).all()
+        for assignee in ticket.assignees:
+            if assignee.id not in {u.id for u in ticket.watchers}:
+                ticket.watchers.append(assignee)
+        new_assignee_ids = {u.id for u in ticket.assignees}
         new_names = "、".join([user.display_name for user in ticket.assignees]) or "无"
         if old_names != new_names:
             changes.append(f"负责人: {old_names} -> {new_names}")
+        for uid in new_assignee_ids - old_assignee_ids:
+            if uid != request.current_user.id:
+                _push_user_notification(
+                    uid,
+                    "assign",
+                    "你被指派为工单负责人",
+                    ticket.title[:200],
+                    ticket.id,
+                )
 
     if changes:
         create_history(ticket, request.current_user.id, "；".join(changes)[:255])
+        _notify_ticket_watchers(ticket, request.current_user.id, "ticket_update", "你关注的工单有更新", "；".join(changes)[:180])
 
     db.session.commit()
-    return jsonify(ticket.to_dict())
+    return jsonify(ticket.to_dict(current_user_id=request.current_user.id))
+
+
+@api_bp.post("/tickets/batch-update")
+@auth_required()
+def batch_update_tickets() -> Any:
+    payload = request.get_json(silent=True) or {}
+    ticket_ids_raw = payload.get("ticket_ids", [])
+    if not isinstance(ticket_ids_raw, list) or not ticket_ids_raw:
+        return jsonify({"message": "请选择至少一个工单"}), 400
+    ticket_ids: list[int] = []
+    for item in ticket_ids_raw:
+        try:
+            ticket_ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    if not ticket_ids:
+        return jsonify({"message": "工单ID无效"}), 400
+
+    tickets = Ticket.query.filter(Ticket.id.in_(ticket_ids)).all()
+    if not tickets:
+        return jsonify({"message": "未找到可更新工单"}), 404
+
+    has_change = any(field in payload for field in ["status", "priority", "assignee_ids"])
+    if not has_change:
+        return jsonify({"message": "请至少提供一项批量更新字段"}), 400
+
+    assignees = None
+    if "assignee_ids" in payload:
+        assignee_ids = payload.get("assignee_ids") or []
+        assignees = User.query.filter(User.id.in_(assignee_ids)).all() if assignee_ids else []
+
+    updated: list[dict[str, Any]] = []
+    for ticket in tickets:
+        change_parts: list[str] = []
+        if "status" in payload and payload["status"] and ticket.status != payload["status"]:
+            change_parts.append(f"状态: {ticket.status} -> {payload['status']}")
+            ticket.status = payload["status"]
+        if "priority" in payload and payload["priority"] and ticket.priority != payload["priority"]:
+            change_parts.append(f"优先级: {ticket.priority} -> {payload['priority']}")
+            ticket.priority = payload["priority"]
+        if assignees is not None:
+            old_names = "、".join([user.display_name for user in ticket.assignees]) or "无"
+            ticket.assignees = assignees
+            for assignee in assignees:
+                if assignee.id not in {u.id for u in ticket.watchers}:
+                    ticket.watchers.append(assignee)
+            new_names = "、".join([user.display_name for user in ticket.assignees]) or "无"
+            if old_names != new_names:
+                change_parts.append(f"负责人: {old_names} -> {new_names}")
+        if change_parts:
+            summary = "批量更新：" + "；".join(change_parts)
+            create_history(ticket, request.current_user.id, summary[:255])
+            _notify_ticket_watchers(ticket, request.current_user.id, "ticket_batch", "你关注的工单被批量更新", summary[:180])
+            updated.append(ticket.to_dict(current_user_id=request.current_user.id))
+
+    db.session.commit()
+    return jsonify({"updated_count": len(updated), "items": updated})
 
 
 @api_bp.delete("/tickets/<int:ticket_id>")
@@ -768,11 +977,40 @@ def get_ticket_detail(ticket_id: int) -> Any:
     ticket = db.session.get(Ticket, ticket_id)
     if not ticket:
         return jsonify({"message": "工单不存在"}), 404
+    child_task_tickets = (
+        Ticket.query.filter(Ticket.parent_task_id == ticket.id).order_by(Ticket.updated_at.desc()).all()
+    )
+    related_bug_tickets = (
+        Ticket.query.filter(Ticket.related_task_id == ticket.id, Ticket.ticket_type == "BUG单")
+        .order_by(Ticket.updated_at.desc())
+        .all()
+    )
+
     return jsonify(
         {
-            "ticket": ticket.to_dict(),
+            "ticket": ticket.to_dict(current_user_id=request.current_user.id),
             "histories": [item.to_dict() for item in sorted(ticket.histories, key=lambda row: row.created_at, reverse=True)],
             "comments": [item.to_dict() for item in sorted(ticket.comments, key=lambda row: row.created_at, reverse=True)],
+            "comment_replies": [
+                item.to_dict()
+                for item in CommentReply.query.filter_by(ticket_id=ticket.id).order_by(CommentReply.created_at.asc()).all()
+            ],
+            "checklist_items": [
+                item.to_dict()
+                for item in TicketChecklistItem.query.filter_by(ticket_id=ticket.id)
+                .order_by(TicketChecklistItem.position.asc(), TicketChecklistItem.id.asc())
+                .all()
+            ],
+            "child_task_tickets": [item.to_dict(current_user_id=request.current_user.id) for item in child_task_tickets],
+            "related_bug_tickets": [item.to_dict(current_user_id=request.current_user.id) for item in related_bug_tickets],
+            "child_task_progress": {
+                "total": len(child_task_tickets),
+                "done": len([item for item in child_task_tickets if item.status == "已完成"]),
+            },
+            "related_bug_progress": {
+                "total": len(related_bug_tickets),
+                "done": len([item for item in related_bug_tickets if item.status == "已完成"]),
+            },
         }
     )
 
@@ -788,17 +1026,166 @@ def add_comment(ticket_id: int) -> Any:
     if not content:
         return jsonify({"message": "评论内容不能为空"}), 400
 
+    valid_ids = _resolve_mention_user_ids(payload.get("mentions", []))
+
     comment = Comment(
         ticket_id=ticket_id,
         user_id=request.current_user.id,
         content=content,
-        mentions=json.dumps(payload.get("mentions", []), ensure_ascii=False),
+        mentions=json.dumps(sorted(valid_ids), ensure_ascii=False),
         screenshot=payload.get("screenshot", "").strip(),
     )
     db.session.add(comment)
+    editor_name = request.current_user.display_name or request.current_user.username
+    for uid in valid_ids:
+        if uid == request.current_user.id:
+            continue
+        _push_user_notification(
+            uid,
+            "mention",
+            f"{editor_name} 在工单评论中@了你",
+            ticket.title[:200],
+            ticket.id,
+        )
+    _notify_ticket_watchers(ticket, request.current_user.id, "ticket_comment", f"{editor_name} 评论了你关注的工单")
     create_history(ticket, request.current_user.id, "新增评论")
     db.session.commit()
     return jsonify(comment.to_dict()), 201
+
+
+@api_bp.post("/tickets/<int:ticket_id>/watch")
+@auth_required()
+def watch_ticket(ticket_id: int) -> Any:
+    ticket = db.session.get(Ticket, ticket_id)
+    if not ticket:
+        return jsonify({"message": "工单不存在"}), 404
+    if request.current_user.id not in {u.id for u in ticket.watchers}:
+        ticket.watchers.append(request.current_user)
+        db.session.commit()
+    return jsonify(ticket.to_dict(current_user_id=request.current_user.id))
+
+
+@api_bp.delete("/tickets/<int:ticket_id>/watch")
+@auth_required()
+def unwatch_ticket(ticket_id: int) -> Any:
+    ticket = db.session.get(Ticket, ticket_id)
+    if not ticket:
+        return jsonify({"message": "工单不存在"}), 404
+    ticket.watchers = [u for u in ticket.watchers if u.id != request.current_user.id]
+    db.session.commit()
+    return jsonify(ticket.to_dict(current_user_id=request.current_user.id))
+
+
+@api_bp.post("/tickets/<int:ticket_id>/comments/<int:comment_id>/replies")
+@auth_required()
+def add_comment_reply(ticket_id: int, comment_id: int) -> Any:
+    ticket = db.session.get(Ticket, ticket_id)
+    if not ticket:
+        return jsonify({"message": "工单不存在"}), 404
+    comment = db.session.get(Comment, comment_id)
+    if not comment or comment.ticket_id != ticket_id:
+        return jsonify({"message": "评论不存在"}), 404
+    payload = request.get_json(silent=True) or {}
+    content = (payload.get("content") or "").strip()
+    if not content:
+        return jsonify({"message": "回复内容不能为空"}), 400
+
+    valid_ids = _resolve_mention_user_ids(payload.get("mentions", []))
+    reply = CommentReply(
+        ticket_id=ticket_id,
+        comment_id=comment_id,
+        user_id=request.current_user.id,
+        content=content,
+        mentions=json.dumps(sorted(valid_ids), ensure_ascii=False),
+    )
+    db.session.add(reply)
+    editor_name = request.current_user.display_name or request.current_user.username
+    for uid in valid_ids:
+        if uid == request.current_user.id:
+            continue
+        _push_user_notification(
+            uid,
+            "mention",
+            f"{editor_name} 在评论回复中@了你",
+            ticket.title[:200],
+            ticket.id,
+        )
+    _notify_ticket_watchers(ticket, request.current_user.id, "ticket_reply", f"{editor_name} 回复了评论")
+    create_history(ticket, request.current_user.id, "新增评论回复")
+    db.session.commit()
+    return jsonify(reply.to_dict()), 201
+
+
+@api_bp.post("/tickets/<int:ticket_id>/checklist")
+@auth_required()
+def add_ticket_checklist_item(ticket_id: int) -> Any:
+    ticket = db.session.get(Ticket, ticket_id)
+    if not ticket:
+        return jsonify({"message": "工单不存在"}), 404
+    payload = request.get_json(silent=True) or {}
+    content = (payload.get("content") or "").strip()
+    if not content:
+        return jsonify({"message": "清单内容不能为空"}), 400
+    max_position = (
+        db.session.query(func.max(TicketChecklistItem.position)).filter(TicketChecklistItem.ticket_id == ticket_id).scalar()
+        or 0
+    )
+    item = TicketChecklistItem(
+        ticket_id=ticket_id,
+        content=content[:255],
+        is_done=False,
+        position=max_position + 1,
+        creator_id=request.current_user.id,
+    )
+    db.session.add(item)
+    create_history(ticket, request.current_user.id, "新增子任务清单")
+    _notify_ticket_watchers(ticket, request.current_user.id, "ticket_checklist", "你关注的工单新增了子任务")
+    db.session.commit()
+    return jsonify(item.to_dict()), 201
+
+
+@api_bp.patch("/tickets/<int:ticket_id>/checklist/<int:item_id>")
+@auth_required()
+def update_ticket_checklist_item(ticket_id: int, item_id: int) -> Any:
+    ticket = db.session.get(Ticket, ticket_id)
+    if not ticket:
+        return jsonify({"message": "工单不存在"}), 404
+    item = db.session.get(TicketChecklistItem, item_id)
+    if not item or item.ticket_id != ticket_id:
+        return jsonify({"message": "清单项不存在"}), 404
+    payload = request.get_json(silent=True) or {}
+    if "content" in payload:
+        content = (payload.get("content") or "").strip()
+        if not content:
+            return jsonify({"message": "清单内容不能为空"}), 400
+        item.content = content[:255]
+    if "is_done" in payload:
+        item.is_done = bool(payload.get("is_done"))
+    if "position" in payload:
+        try:
+            item.position = int(payload.get("position"))
+        except (TypeError, ValueError):
+            pass
+    create_history(ticket, request.current_user.id, "更新子任务清单")
+    _notify_ticket_watchers(ticket, request.current_user.id, "ticket_checklist", "你关注的工单子任务有更新")
+    db.session.commit()
+    return jsonify(item.to_dict())
+
+
+@api_bp.delete("/tickets/<int:ticket_id>/checklist/<int:item_id>")
+@auth_required()
+def delete_ticket_checklist_item(ticket_id: int, item_id: int) -> Any:
+    ticket = db.session.get(Ticket, ticket_id)
+    if not ticket:
+        return jsonify({"message": "工单不存在"}), 404
+    item = db.session.get(TicketChecklistItem, item_id)
+    if not item or item.ticket_id != ticket_id:
+        return jsonify({"message": "清单项不存在"}), 404
+    db.session.delete(item)
+    create_history(ticket, request.current_user.id, "删除子任务清单")
+    _notify_ticket_watchers(ticket, request.current_user.id, "ticket_checklist", "你关注的工单子任务有更新")
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @api_bp.get("/wiki/categories")
@@ -1043,6 +1430,16 @@ def notifications() -> Any:
         if ticket.status in {"待处理", "处理中", "待验收"} and now <= _to_utc_naive(ticket.end_time) <= soon
     ]
 
+    unread_notification_count = (
+        db.session.query(func.count(UserNotification.id))
+        .filter(
+            UserNotification.user_id == user.id,
+            UserNotification.read_at.is_(None),
+        )
+        .scalar()
+        or 0
+    )
+
     return jsonify(
         {
             "new_ticket_count": len(new_items),
@@ -1051,5 +1448,57 @@ def notifications() -> Any:
             "new_tickets": [ticket.to_dict() for ticket in new_items[:5]],
             "overdue_tickets": [ticket.to_dict() for ticket in overdue_items[:5]],
             "soon_due_tickets": [ticket.to_dict() for ticket in soon_due_items[:5]],
+            "unread_notification_count": unread_notification_count,
         }
     )
+
+
+@api_bp.get("/notification-feed")
+@auth_required()
+def notification_feed() -> Any:
+    user: User = request.current_user
+    page = max(1, request.args.get("page", 1, type=int) or 1)
+    per_page = min(max(1, request.args.get("per_page", 20, type=int) or 20), 100)
+
+    base_q = UserNotification.query.filter(UserNotification.user_id == user.id)
+    total = base_q.count()
+    items = (
+        base_q.order_by(UserNotification.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    return jsonify(
+        {
+            "items": [n.to_dict() for n in items],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
+    )
+
+
+@api_bp.post("/notifications/<int:notification_id>/read")
+@auth_required()
+def mark_notification_read(notification_id: int) -> Any:
+    user: User = request.current_user
+    note = UserNotification.query.filter_by(id=notification_id, user_id=user.id).first()
+    if not note:
+        return jsonify({"message": "通知不存在"}), 404
+    if note.read_at is None:
+        note.read_at = now_utc()
+        db.session.commit()
+    return jsonify(note.to_dict())
+
+
+@api_bp.post("/notifications/read-all")
+@auth_required()
+def mark_all_notifications_read() -> Any:
+    user: User = request.current_user
+    now = now_utc()
+    UserNotification.query.filter(UserNotification.user_id == user.id, UserNotification.read_at.is_(None)).update(
+        {"read_at": now},
+        synchronize_session=False,
+    )
+    db.session.commit()
+    return jsonify({"ok": True})

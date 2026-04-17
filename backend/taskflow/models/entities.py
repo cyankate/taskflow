@@ -13,6 +13,12 @@ ticket_assignees = db.Table(
     db.Column("user_id", db.Integer, db.ForeignKey("user.id"), primary_key=True),
 )
 
+ticket_watchers = db.Table(
+    "ticket_watchers",
+    db.Column("ticket_id", db.Integer, db.ForeignKey("ticket.id"), primary_key=True),
+    db.Column("user_id", db.Integer, db.ForeignKey("user.id"), primary_key=True),
+)
+
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -70,16 +76,23 @@ class Ticket(db.Model):
     end_time = db.Column(db.DateTime, nullable=False)
     project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=False)
     version_id = db.Column(db.Integer, db.ForeignKey("project_version.id"), nullable=True)
+    parent_task_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)
+    related_task_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)
     creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     created_at = db.Column(db.DateTime, default=now_utc, nullable=False)
     updated_at = db.Column(db.DateTime, default=now_utc, onupdate=now_utc, nullable=False)
 
     assignees = db.relationship("User", secondary=ticket_assignees, lazy="subquery")
+    watchers = db.relationship("User", secondary=ticket_watchers, lazy="subquery")
     comments = db.relationship("Comment", backref="ticket", lazy=True, cascade="all, delete-orphan")
     histories = db.relationship("TicketHistory", backref="ticket", lazy=True, cascade="all, delete-orphan")
+    checklist_items = db.relationship("TicketChecklistItem", backref="ticket", lazy=True, cascade="all, delete-orphan")
     version = db.relationship("ProjectVersion", backref="tickets", lazy=True)
+    parent_task = db.relationship("Ticket", foreign_keys=[parent_task_id], remote_side=[id], post_update=True)
+    related_task = db.relationship("Ticket", foreign_keys=[related_task_id], remote_side=[id], post_update=True)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, current_user_id: int | None = None) -> dict[str, Any]:
+        watcher_ids = [user.id for user in self.watchers]
         return {
             "id": self.id,
             "title": self.title,
@@ -96,8 +109,15 @@ class Ticket(db.Model):
             "project_name": self.project.name if self.project else "",
             "version_id": self.version_id,
             "version_name": self.version.name if self.version else "",
+            "parent_task_id": self.parent_task_id,
+            "parent_task_title": self.parent_task.title if self.parent_task else "",
+            "related_task_id": self.related_task_id,
+            "related_task_title": self.related_task.title if self.related_task else "",
             "creator_id": self.creator_id,
             "assignees": [user.to_dict() for user in self.assignees],
+            "watchers": [user.to_dict() for user in self.watchers],
+            "watcher_count": len(watcher_ids),
+            "is_following": current_user_id in watcher_ids if current_user_id else False,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
@@ -185,6 +205,86 @@ class Comment(db.Model):
             "content": self.content,
             "mentions": json.loads(self.mentions or "[]"),
             "screenshot": self.screenshot,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+class CommentReply(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False, index=True)
+    comment_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    mentions = db.Column(db.Text, default="[]", nullable=False)
+    created_at = db.Column(db.DateTime, default=now_utc, nullable=False)
+
+    author = db.relationship("User", foreign_keys=[user_id])
+    comment = db.relationship("Comment", foreign_keys=[comment_id])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "ticket_id": self.ticket_id,
+            "comment_id": self.comment_id,
+            "user": self.author.to_dict() if self.author else None,
+            "content": self.content,
+            "mentions": json.loads(self.mentions or "[]"),
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+class TicketChecklistItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=False, index=True)
+    content = db.Column(db.String(255), nullable=False)
+    is_done = db.Column(db.Boolean, default=False, nullable=False)
+    position = db.Column(db.Integer, default=0, nullable=False)
+    creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=now_utc, nullable=False)
+    updated_at = db.Column(db.DateTime, default=now_utc, onupdate=now_utc, nullable=False)
+
+    creator = db.relationship("User", foreign_keys=[creator_id])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "ticket_id": self.ticket_id,
+            "content": self.content,
+            "is_done": self.is_done,
+            "position": self.position,
+            "creator_id": self.creator_id,
+            "creator_name": self.creator.display_name if self.creator else "",
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+
+class UserNotification(db.Model):
+    """站内通知（@提及、工单指派等）。"""
+
+    __tablename__ = "user_notification"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    kind = db.Column(db.String(32), nullable=False)
+    title = db.Column(db.String(255), nullable=False)
+    body = db.Column(db.Text, default="", nullable=False)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)
+    read_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=now_utc, nullable=False)
+
+    user = db.relationship("User", foreign_keys=[user_id])
+    ticket = db.relationship("Ticket", foreign_keys=[ticket_id])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "title": self.title,
+            "body": self.body,
+            "ticket_id": self.ticket_id,
+            "read": self.read_at is not None,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
             "created_at": self.created_at.isoformat(),
         }
 

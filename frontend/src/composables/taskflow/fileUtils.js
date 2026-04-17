@@ -4,6 +4,19 @@ export function formatDynamicTime(iso) {
   return s.length >= 19 ? s.slice(0, 19).replace("T", " ") : s.replace("T", " ");
 }
 
+export function formatDeadlineSlot(iso) {
+  if (!iso) return "";
+  const raw = String(iso).replace("T", " ");
+  const datePart = raw.slice(0, 10);
+  const d = new Date(raw);
+  if (!Number.isFinite(d.getTime())) {
+    return datePart || raw;
+  }
+  const hour = d.getHours();
+  const period = hour < 12 ? "上午" : hour < 18 ? "下午" : "晚上";
+  return `${datePart} ${period}`;
+}
+
 export function toDateInputFormat(value) {
   if (!value) return "";
   const s = String(value);

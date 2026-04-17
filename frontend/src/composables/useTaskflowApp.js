@@ -1,7 +1,50 @@
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function truncateText(text, maxLength = 72) {
+  const raw = String(text || "").trim();
+  if (raw.length <= maxLength) return raw;
+  return `${raw.slice(0, Math.max(0, maxLength - 1))}...`;
+}
+
+export function commentContentWithMentionsHtml(content, mentionIds, usersList) {
+  let s = escapeHtml(content || "");
+  const ids = Array.isArray(mentionIds) ? mentionIds : [];
+  for (const id of ids) {
+    const u = usersList.find((x) => x.id === id);
+    if (!u) continue;
+    const name = (u.display_name || u.username || "").trim();
+    if (!name) continue;
+    const re = new RegExp("@" + escapeRegex(name), "g");
+    s = s.replace(re, `<span class="mention-highlight">@${escapeHtml(name)}</span>`);
+  }
+  return s;
+}
+
+export function mentionDisplayNames(mentionIds, usersList) {
+  const ids = Array.isArray(mentionIds) ? mentionIds : [];
+  const names = ids
+    .map((id) => usersList.find((x) => x.id === id))
+    .filter(Boolean)
+    .map((u) => (u.display_name || u.username || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(names));
+}
+import { ElMessage, ElMessageBox, ElNotification } from "element-plus";
 import api, { getErrorMessage } from "../api";
 import {
+  formatDeadlineSlot,
   formatDynamicTime,
   isImageAttachment,
   isVideoAttachment,
@@ -15,6 +58,7 @@ import { useAuthState } from "./taskflow/useAuthState";
 import { usePaginationState } from "./taskflow/usePaginationState";
 
 export function useTaskflowApp() {
+  const NOTIFICATION_POLL_MS = 15000;
   let bootstrapRunner = async () => {};
   const { token, user, loginForm, saveAuth, clearAuth, doLogin, logout, handleUserMenuCommand } = useAuthState({
     api,
@@ -26,6 +70,7 @@ export function useTaskflowApp() {
   const currentProjectId = ref(null);
   const currentVersionId = ref(null);
   const globalSearchKeyword = ref("");
+  const searchResultTip = ref("");
 
   const users = ref([]);
   const projects = ref([]);
@@ -33,7 +78,12 @@ export function useTaskflowApp() {
   const tickets = ref([]);
   const dashboard = reactive({});
   const stats = reactive({});
-  const notification = reactive({ new_ticket_count: 0, overdue_count: 0, soon_due_count: 0 });
+  const notification = reactive({
+    new_ticket_count: 0,
+    overdue_count: 0,
+    soon_due_count: 0,
+    unread_notification_count: 0,
+  });
   const projectHub = reactive({
     projects: [],
     project_id: null,
@@ -49,6 +99,26 @@ export function useTaskflowApp() {
     ticket_types: ["需求单", "BUG单"],
     ticket_status: ["待处理", "处理中", "待验收", "已完成", "已拒绝", "已延期"],
     priorities: ["低", "中", "高", "紧急"],
+  });
+
+  const projectHubTicketViewMode = ref("list");
+  const notificationDrawerVisible = ref(false);
+  const lastPolledUnreadCount = ref(null);
+  const notificationPollTimer = ref(null);
+  const notificationPolling = ref(false);
+
+  const kanbanColumns = computed(() => {
+    const statuses = meta.ticket_status || [];
+    const byStatus = {};
+    for (const t of tickets.value) {
+      const st = t.status || "待处理";
+      if (!byStatus[st]) byStatus[st] = [];
+      byStatus[st].push(t);
+    }
+    return statuses.map((status) => ({
+      status,
+      tickets: byStatus[status] || [],
+    }));
   });
 
   const ticketFilter = reactive({ project_id: null, version_id: null });
@@ -72,6 +142,8 @@ export function useTaskflowApp() {
       status: "待处理",
       priority: "中",
       assignee_ids: [],
+      parent_task_id: null,
+      related_task_id: null,
       start_time: "",
       end_time: "",
     },
@@ -93,13 +165,31 @@ export function useTaskflowApp() {
       status: "待处理",
       priority: "中",
       assignee_ids: [],
+      parent_task_id: null,
+      related_task_id: null,
       start_time: "",
       end_time: "",
       attachments: [],
     },
     comments: [],
+    commentReplies: [],
     histories: [],
     newComment: "",
+    commentMentionIds: [],
+    replyDrafts: {},
+    replyMentionIds: {},
+    checklistItems: [],
+    newChecklistItem: "",
+    childTaskTickets: [],
+    relatedBugTickets: [],
+    childTaskProgress: { total: 0, done: 0 },
+    relatedBugProgress: { total: 0, done: 0 },
+  });
+  const selectedTicketIds = ref([]);
+  const batchEdit = reactive({
+    status: "",
+    priority: "",
+    assignee_ids: [],
   });
   const imagePreview = reactive({
     visible: false,
@@ -147,6 +237,9 @@ export function useTaskflowApp() {
     }, {});
     return Object.entries(grouped).map(([position, members]) => ({ position, members }));
   });
+  const taskTicketOptions = computed(() =>
+    (tickets.value || []).filter((item) => item.ticket_type !== "BUG单").map((item) => ({ id: item.id, title: item.title })),
+  );
   const {
     dashboardTaskPage,
     dashboardTaskPageSize,
@@ -237,6 +330,12 @@ export function useTaskflowApp() {
     removeDetailAttachment,
     persistTicketAttachments,
     addComment,
+    toggleTicketFollow,
+    addCommentReply,
+    addChecklistItem,
+    toggleChecklistItem,
+    removeChecklistItem,
+    batchUpdateTickets,
   } = useTicketModule({
     api,
     ElMessage,
@@ -251,6 +350,8 @@ export function useTaskflowApp() {
     globalSearchKeyword,
     currentProjectId,
     currentVersionId,
+    selectedTicketIds,
+    batchEdit,
     projects,
     versions,
     meta,
@@ -271,6 +372,10 @@ export function useTaskflowApp() {
     loadDashboard,
     loadStats,
     loadNotifications,
+    notificationFeed,
+    loadNotificationFeed,
+    markNotificationRead,
+    markAllNotificationsRead,
     onGlobalProjectChange,
     onGlobalVersionChange,
     selectVersionByButton,
@@ -314,6 +419,204 @@ export function useTaskflowApp() {
   loadVersionsForTicketModule = loadVersions;
   bootstrapRunner = bootstrap;
 
+  async function openNotificationCenter() {
+    notificationDrawerVisible.value = true;
+    await loadNotificationFeed(1);
+  }
+
+  async function onNotificationItemClick(item) {
+    if (!item.read) {
+      await markNotificationRead(item.id);
+    }
+    if (item.ticket_id) {
+      notificationDrawerVisible.value = false;
+      await openTicketDetail({ id: item.ticket_id });
+    }
+  }
+
+  async function onNotificationFeedPageChange(page) {
+    await loadNotificationFeed(page);
+  }
+
+  function onCommentMentionIdsChange(ids) {
+    if (!Array.isArray(ids)) return;
+    let nextContent = ticketDetail.newComment || "";
+    for (const id of ids) {
+      const userItem = users.value.find((item) => item.id === id);
+      const name = (userItem?.display_name || userItem?.username || "").trim();
+      if (!name) continue;
+      const mentionRegex = new RegExp(`(^|\\s)@${escapeRegex(name)}(?=\\s|$)`);
+      if (!mentionRegex.test(nextContent)) {
+        nextContent = `${nextContent.trimEnd()}${nextContent.trim() ? " " : ""}@${name}`;
+      }
+    }
+    ticketDetail.newComment = nextContent;
+  }
+
+  function onReplyMentionIdsChange(commentId, ids) {
+    if (!Array.isArray(ids) || !commentId) return;
+    const current = ticketDetail.replyDrafts[commentId] || "";
+    let nextContent = current;
+    for (const id of ids) {
+      const userItem = users.value.find((item) => item.id === id);
+      const name = (userItem?.display_name || userItem?.username || "").trim();
+      if (!name) continue;
+      const mentionRegex = new RegExp(`(^|\\s)@${escapeRegex(name)}(?=\\s|$)`);
+      if (!mentionRegex.test(nextContent)) {
+        nextContent = `${nextContent.trimEnd()}${nextContent.trim() ? " " : ""}@${name}`;
+      }
+    }
+    ticketDetail.replyDrafts[commentId] = nextContent;
+  }
+
+  function getCommentReplies(commentId) {
+    const all = Array.isArray(ticketDetail.commentReplies) ? ticketDetail.commentReplies : [];
+    return all.filter((item) => item.comment_id === commentId);
+  }
+
+  function onProjectHubSelectionChange(rows) {
+    selectedTicketIds.value = (rows || []).map((row) => row.id);
+  }
+
+  async function submitBatchEdit() {
+    await batchUpdateTickets();
+  }
+
+  async function createSubTaskFromDetail() {
+    const parentId = ticketDetail.ticket?.id;
+    if (!parentId) return;
+    await openTicketDialog();
+    ticketDialog.form.ticket_type = "需求单";
+    ticketDialog.form.parent_task_id = parentId;
+    ticketDialog.form.related_task_id = null;
+    ticketDialog.form.title = `${ticketDetail.ticket.title || ""}-子任务`;
+  }
+
+  async function createBugFromDetail() {
+    const relatedId = ticketDetail.ticket?.id;
+    if (!relatedId) return;
+    await openTicketDialog();
+    ticketDialog.form.ticket_type = "BUG单";
+    ticketDialog.form.parent_task_id = null;
+    ticketDialog.form.related_task_id = relatedId;
+    ticketDialog.form.title = `${ticketDetail.ticket.title || ""}-关联BUG`;
+  }
+
+  async function runTopbarSearch() {
+    ticketFilter.project_id = currentProjectId.value;
+    ticketFilter.version_id = currentVersionId.value;
+    await runGlobalSearch();
+    const keyword = globalSearchKeyword.value.trim();
+    searchResultTip.value = keyword ? `已搜索到 ${tickets.value.length} 条结果` : "";
+    if (activeTab.value !== "project_hub") {
+      activeTab.value = "project_hub";
+    }
+  }
+
+  async function clearTopbarSearch() {
+    globalSearchKeyword.value = "";
+    searchResultTip.value = "";
+    ticketFilter.project_id = currentProjectId.value;
+    ticketFilter.version_id = currentVersionId.value;
+    await runGlobalSearch();
+  }
+
+  async function openNotificationFromToast(item) {
+    if (!item) return;
+    if (!item.read) {
+      await markNotificationRead(item.id);
+    }
+    if (item.ticket_id) {
+      notificationDrawerVisible.value = false;
+      await openTicketDetail({ id: item.ticket_id });
+    }
+  }
+
+  function clearNotificationPolling() {
+    if (notificationPollTimer.value) {
+      clearInterval(notificationPollTimer.value);
+      notificationPollTimer.value = null;
+    }
+    notificationPolling.value = false;
+    lastPolledUnreadCount.value = null;
+  }
+
+  async function fetchUnreadNotificationCount() {
+    const params = {};
+    if (currentProjectId.value) params.project_id = currentProjectId.value;
+    const { data } = await api.get("/notifications", { params });
+    return Number(data?.unread_notification_count || 0);
+  }
+
+  async function pollNotificationsAndNotify() {
+    if (!token.value || notificationPolling.value) return;
+    notificationPolling.value = true;
+    try {
+      const currentUnread = await fetchUnreadNotificationCount();
+      notification.unread_notification_count = currentUnread;
+      const prevUnread = lastPolledUnreadCount.value;
+      if (typeof prevUnread === "number" && currentUnread > prevUnread) {
+        const delta = currentUnread - prevUnread;
+        await loadNotificationFeed(1);
+        const unreadPreview = (notificationFeed.items || []).filter((item) => !item.read).slice(0, Math.min(delta, 3));
+        const previewItems = unreadPreview.length ? unreadPreview : (notificationFeed.items || []).slice(0, 3);
+        const previewNode = h(
+          "div",
+          { class: "notification-toast-preview" },
+          previewItems.map((item) =>
+            h(
+              "div",
+              {
+                class: "notification-toast-line",
+                style: "margin-top: 6px; line-height: 1.45; display: flex; gap: 8px; align-items: baseline;",
+              },
+              [
+                h(
+                  "span",
+                  { style: "flex: 1; min-width: 0;" },
+                  truncateText(`${item.title}${item.body ? `：${item.body}` : ""}`, 88),
+                ),
+                h(
+                  "span",
+                  {
+                    style: "color: #409eff; cursor: pointer; white-space: nowrap; font-size: 12px;",
+                    onClick: (event) => {
+                      event.stopPropagation();
+                      openNotificationFromToast(item);
+                    },
+                  },
+                  "查看",
+                ),
+              ],
+            ),
+          ),
+        );
+        ElNotification({
+          title: "新通知",
+          message: previewNode,
+          type: "info",
+          duration: 7000,
+          position: "bottom-right",
+          onClick: () => {
+            openNotificationCenter();
+          },
+        });
+      }
+      lastPolledUnreadCount.value = currentUnread;
+    } catch {
+      // Ignore polling errors to avoid interrupting user workflow.
+    } finally {
+      notificationPolling.value = false;
+    }
+  }
+
+  function startNotificationPolling() {
+    if (notificationPollTimer.value) return;
+    notificationPollTimer.value = setInterval(() => {
+      pollNotificationsAndNotify();
+    }, NOTIFICATION_POLL_MS);
+  }
+
   async function refreshAllData() {
     ticketFilter.project_id = currentProjectId.value;
     await Promise.all([
@@ -329,10 +632,29 @@ export function useTaskflowApp() {
     if (token.value) {
       try {
         await bootstrap();
+        lastPolledUnreadCount.value = Number(notification.unread_notification_count || 0);
+        startNotificationPolling();
       } catch {
         clearAuth();
       }
     }
+  });
+
+  watch(
+    token,
+    (nextToken) => {
+      if (nextToken) {
+        lastPolledUnreadCount.value = Number(notification.unread_notification_count || 0);
+        startNotificationPolling();
+      } else {
+        clearNotificationPolling();
+      }
+    },
+    { immediate: false },
+  );
+
+  onUnmounted(() => {
+    clearNotificationPolling();
   });
 
   return {
@@ -342,6 +664,7 @@ export function useTaskflowApp() {
     currentProjectId,
     currentVersionId,
     globalSearchKeyword,
+    searchResultTip,
     loginForm,
     users,
     projects,
@@ -350,6 +673,10 @@ export function useTaskflowApp() {
     dashboard,
     stats,
     notification,
+    notificationDrawerVisible,
+    notificationFeed,
+    projectHubTicketViewMode,
+    kanbanColumns,
     projectHub,
     versionForm,
     showVersionCreateForm,
@@ -359,6 +686,8 @@ export function useTaskflowApp() {
     projectDialog,
     ticketDialog,
     ticketDetail,
+    selectedTicketIds,
+    batchEdit,
     imagePreview,
     wikiCategories,
     wikiArticles,
@@ -377,6 +706,7 @@ export function useTaskflowApp() {
     ticketDetailAttachments,
     detailCreatorName,
     detailAssigneeGroups,
+    taskTicketOptions,
     dashboardTaskPage,
     dashboardTaskPageSize,
     dashboardBugPage,
@@ -393,6 +723,7 @@ export function useTaskflowApp() {
     pagedProjectDynamics,
     pagedWikiArticles,
     formatDynamicTime,
+    formatDeadlineSlot,
     toDateInputFormat,
     normalizeAttachments,
     isImageAttachment,
@@ -414,9 +745,17 @@ export function useTaskflowApp() {
     selectVersionByButton,
     loadTickets,
     runGlobalSearch,
+    runTopbarSearch,
+    clearTopbarSearch,
     loadDashboard,
     loadStats,
     loadNotifications,
+    loadNotificationFeed,
+    markNotificationRead,
+    markAllNotificationsRead,
+    openNotificationCenter,
+    onNotificationItemClick,
+    onNotificationFeedPageChange,
     loadWikiCategories,
     loadWikiArticles,
     setWikiCategoryFilter,
@@ -452,6 +791,20 @@ export function useTaskflowApp() {
     removeDetailAttachment,
     persistTicketAttachments,
     addComment,
+    toggleTicketFollow,
+    addCommentReply,
+    addChecklistItem,
+    toggleChecklistItem,
+    removeChecklistItem,
+    onProjectHubSelectionChange,
+    submitBatchEdit,
+    createSubTaskFromDetail,
+    createBugFromDetail,
+    onCommentMentionIdsChange,
+    onReplyMentionIdsChange,
+    getCommentReplies,
+    commentContentWithMentionsHtml,
+    mentionDisplayNames,
     refreshAllData,
   };
 }

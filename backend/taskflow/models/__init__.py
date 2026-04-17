@@ -1,13 +1,17 @@
 from taskflow.models.entities import (
     Comment,
+    CommentReply,
     Project,
     ProjectVersion,
     Ticket,
+    TicketChecklistItem,
     TicketHistory,
     User,
+    UserNotification,
     WikiArticle,
     WikiCategory,
     ticket_assignees,
+    ticket_watchers,
 )
 
 __all__ = [
@@ -16,8 +20,12 @@ __all__ = [
     "ProjectVersion",
     "Ticket",
     "Comment",
+    "CommentReply",
     "TicketHistory",
+    "TicketChecklistItem",
+    "UserNotification",
     "WikiCategory",
     "WikiArticle",
     "ticket_assignees",
+    "ticket_watchers",
 ]
