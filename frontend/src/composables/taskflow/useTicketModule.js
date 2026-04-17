@@ -309,30 +309,29 @@ export function useTicketModule({
       event.target.value = "";
       return;
     }
-    const readPromises = files.map(
-      (file) =>
-        new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () =>
-            resolve({
-              name: file.name,
-              type: file.type,
-              url: reader.result,
-            });
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        }),
-    );
     try {
-      const mapped = await Promise.all(readPromises);
+      const mapped = await Promise.all(
+        files.map(async (file) => {
+          const formData = new FormData();
+          formData.append("file", file);
+          const { data } = await api.post("/uploads?scope=ticket", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+          return {
+            name: data?.name || file.name,
+            type: data?.type || file.type,
+            url: data?.url,
+          };
+        }),
+      );
       const nextAttachments = [...normalizeAttachments(ticketDetail.ticket.attachments), ...mapped];
       const ok = await persistTicketAttachments(nextAttachments);
       if (ok) {
         ticketAttachmentError.value = "";
         ElMessage.success("附件提交成功");
       }
-    } catch {
-      ticketAttachmentError.value = "附件读取失败，请重试";
+    } catch (err) {
+      ticketAttachmentError.value = getErrorMessage(err, "附件上传失败，请重试");
       ElMessage.error(ticketAttachmentError.value);
     }
     event.target.value = "";

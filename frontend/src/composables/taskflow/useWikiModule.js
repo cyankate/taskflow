@@ -16,6 +16,31 @@ export function useWikiModule({
   MAX_ATTACHMENT_SIZE_MB,
   normalizeAttachments,
 }) {
+  function escapeHtmlAttribute(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  async function uploadWikiFile(file, { allowDocuments = false, scope = "wiki" } = {}) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const params = new URLSearchParams({ scope });
+    if (allowDocuments) {
+      params.set("allow_documents", "1");
+    }
+    const { data } = await api.post(`/uploads?${params.toString()}`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return {
+      name: data?.name || file.name,
+      type: data?.type || file.type,
+      url: data?.url,
+    };
+  }
+
   async function loadWikiCategories() {
     const { data } = await api.get("/wiki/categories");
     wikiCategories.value = data || [];
@@ -117,19 +142,16 @@ export function useWikiModule({
       return;
     }
     try {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      const uploaded = await uploadWikiFile(file, { allowDocuments: false, scope: "wiki-inline" });
+      const mediaUrl = escapeHtmlAttribute(uploaded.url);
+      const altText = escapeHtmlAttribute(file.name);
       if (mediaType === "image") {
-        insertHtmlToWikiEditor(`<p><img src="${dataUrl}" alt="${file.name}" style="max-width:100%;" /></p>`);
+        insertHtmlToWikiEditor(`<p><img src="${mediaUrl}" alt="${altText}" style="max-width:100%;" /></p>`);
       } else {
-        insertHtmlToWikiEditor(`<p><video src="${dataUrl}" controls style="max-width:100%;height:auto;"></video></p>`);
+        insertHtmlToWikiEditor(`<p><video src="${mediaUrl}" controls style="max-width:100%;height:auto;"></video></p>`);
       }
-    } catch {
-      ElMessage.error("媒体插入失败，请重试");
+    } catch (err) {
+      ElMessage.error(getErrorMessage(err, "媒体上传失败，请重试"));
     }
     event.target.value = "";
   }
@@ -146,20 +168,10 @@ export function useWikiModule({
       return;
     }
     try {
-      const mapped = await Promise.all(
-        files.map(
-          (file) =>
-            new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve({ name: file.name, type: file.type, url: reader.result });
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            }),
-        ),
-      );
+      const mapped = await Promise.all(files.map((file) => uploadWikiFile(file, { allowDocuments: true, scope: "wiki" })));
       wikiDialog.form.attachments = [...(wikiDialog.form.attachments || []), ...mapped];
-    } catch {
-      wikiAttachmentError.value = "附件读取失败，请重试";
+    } catch (err) {
+      wikiAttachmentError.value = getErrorMessage(err, "附件上传失败，请重试");
       ElMessage.error(wikiAttachmentError.value);
     }
     event.target.value = "";

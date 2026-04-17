@@ -3,13 +3,18 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import os
+import re
 import time
+import uuid
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from sqlalchemy import and_, func, or_
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 from taskflow.constants import BUG_SUB_TYPES, DEMAND_SUB_TYPES, POSITIONS, PRIORITIES, TICKET_STATUS, TICKET_TYPES
 from taskflow.extensions import db
@@ -65,6 +70,7 @@ RATE_LIMIT_LOGIN_COUNT = 10
 RATE_LIMIT_UPLOAD_COUNT = 20
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_STORE: dict[str, list[float]] = {}
+UPLOAD_API_PREFIX = "/api/uploads/"
 
 
 def _log_security_event(event: str, detail: str, level: str = "warning") -> None:
@@ -326,6 +332,148 @@ def _enforce_rate_limit(scope: str, limit: int) -> tuple[bool, tuple[Any, int] |
     return True, None
 
 
+def _upload_root_path() -> Path:
+    upload_dir = Path(current_app.instance_path) / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    return upload_dir
+
+
+def _is_internal_upload_url(url: str) -> bool:
+    return isinstance(url, str) and url.startswith(UPLOAD_API_PREFIX)
+
+
+def _resolve_internal_upload_path(url: str) -> Path | None:
+    if not _is_internal_upload_url(url):
+        return None
+    relative = url[len(UPLOAD_API_PREFIX) :].strip("/")
+    if not relative:
+        return None
+    target = (_upload_root_path() / relative).resolve()
+    root = _upload_root_path().resolve()
+    if os.path.commonpath([str(root), str(target)]) != str(root):
+        return None
+    return target
+
+
+def _guess_extension(mime_type: str, file_name: str) -> str:
+    lowered_name = (file_name or "").strip().lower()
+    if "." in lowered_name:
+        ext = "." + lowered_name.rsplit(".", 1)[1]
+        if ext:
+            return ext
+    mime_map = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/bmp": ".bmp",
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "video/quicktime": ".mov",
+        "application/pdf": ".pdf",
+        "application/msword": ".doc",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+        "application/vnd.ms-excel": ".xls",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+        "text/plain": ".txt",
+    }
+    return mime_map.get((mime_type or "").strip().lower(), ".bin")
+
+
+def _store_upload_bytes(
+    *,
+    payload_bytes: bytes,
+    mime_type: str,
+    file_name: str,
+    upload_scope: str,
+) -> dict[str, Any]:
+    safe_scope = secure_filename(upload_scope or "general") or "general"
+    safe_name = secure_filename(file_name or "") or "file"
+    ext = _guess_extension(mime_type, safe_name)
+    if "." not in safe_name:
+        safe_name = f"{safe_name}{ext}"
+    unique_name = f"{uuid.uuid4().hex}_{safe_name}"
+    folder = _upload_root_path() / safe_scope
+    folder.mkdir(parents=True, exist_ok=True)
+    target_path = folder / unique_name
+    target_path.write_bytes(payload_bytes)
+    relative = f"{safe_scope}/{unique_name}"
+    return {
+        "name": file_name or safe_name,
+        "type": mime_type,
+        "url": f"{UPLOAD_API_PREFIX}{relative}",
+        "size": len(payload_bytes),
+    }
+
+
+def _normalize_and_persist_attachments(
+    attachments: Any,
+    *,
+    allow_documents: bool,
+    upload_scope: str,
+) -> tuple[list[dict[str, Any]], str]:
+    is_valid_attachment, attachment_message = _validate_attachments_payload(attachments, allow_documents=allow_documents)
+    if not is_valid_attachment:
+        return [], attachment_message
+    normalized: list[dict[str, Any]] = []
+    for item in attachments or []:
+        name = str(item.get("name", "")).strip()
+        attachment_type = str(item.get("type", "")).strip().lower()
+        url = str(item.get("url", "")).strip()
+        if url.startswith("data:"):
+            parsed_type, payload_bytes = _decode_data_url(url)
+            if parsed_type is None:
+                return [], "附件编码无效"
+            upload_item = _store_upload_bytes(
+                payload_bytes=payload_bytes,
+                mime_type=attachment_type or parsed_type,
+                file_name=name,
+                upload_scope=upload_scope,
+            )
+            normalized.append(upload_item)
+            continue
+        if _is_internal_upload_url(url):
+            existing = _resolve_internal_upload_path(url)
+            if not existing or not existing.exists():
+                return [], "附件资源不存在，请重新上传"
+            normalized.append({"name": name, "type": attachment_type, "url": url})
+            continue
+        normalized.append({"name": name, "type": attachment_type, "url": url})
+    return normalized, ""
+
+
+def _persist_inline_media_in_html(content: str, *, upload_scope: str) -> tuple[str, str]:
+    html = str(content or "")
+    if not html:
+        return "", ""
+
+    def _replace(match: re.Match[str]) -> str:
+        quote = match.group("quote")
+        data_url = match.group("data")
+        if _estimate_data_url_size(data_url) > MAX_ATTACHMENT_SIZE_BYTES:
+            raise ValueError("单个附件不能超过 20MB")
+        parsed_type, payload_bytes = _decode_data_url(data_url)
+        if parsed_type is None:
+            raise ValueError("媒体编码无效")
+        if not any(parsed_type.startswith(prefix) for prefix in MEDIA_MIME_PREFIXES):
+            raise ValueError("Wiki 内嵌媒体仅支持图片和视频")
+        if not _is_magic_signature_valid(parsed_type, payload_bytes):
+            raise ValueError("媒体内容与类型不匹配")
+        stored = _store_upload_bytes(
+            payload_bytes=payload_bytes,
+            mime_type=parsed_type,
+            file_name=f"inline{_guess_extension(parsed_type, '')}",
+            upload_scope=upload_scope,
+        )
+        return f'src={quote}{stored["url"]}{quote}'
+
+    try:
+        updated = re.sub(r"src=(?P<quote>[\"'])(?P<data>data:[^\"']+)(?P=quote)", _replace, html)
+    except ValueError as exc:
+        return html, str(exc)
+    return updated, ""
+
+
 def _validate_attachments_payload(attachments: Any, allow_documents: bool = False) -> tuple[bool, str]:
     if attachments is None:
         return True, ""
@@ -370,9 +518,14 @@ def _validate_attachments_payload(attachments: Any, allow_documents: bool = Fals
                     f"attachment_magic_mismatch type={check_type or 'unknown'}, name={file_name or 'unknown'}",
                 )
                 return False, "附件内容与类型不匹配"
+        elif _is_internal_upload_url(url):
+            internal_path = _resolve_internal_upload_path(url)
+            if not internal_path or not internal_path.exists():
+                _log_security_event("UPLOAD_REJECTED", "attachment_internal_url_missing")
+                return False, "附件资源不存在，请重新上传"
         elif not (url.startswith("http://") or url.startswith("https://")):
             _log_security_event("UPLOAD_REJECTED", "attachment_url_scheme_invalid")
-            return False, "附件 URL 仅支持 data/http/https"
+            return False, "附件 URL 仅支持 data/http/https 或系统上传地址"
 
         is_media = any(attachment_type.startswith(prefix) for prefix in MEDIA_MIME_PREFIXES)
         is_doc = allow_documents and attachment_type in DOC_MIME_TYPES
@@ -398,6 +551,52 @@ def _validate_attachments_payload(attachments: Any, allow_documents: bool = Fals
 @api_bp.get("/health")
 def health() -> Any:
     return jsonify({"status": "ok"})
+
+
+@api_bp.get("/uploads/<path:file_path>")
+def serve_upload(file_path: str) -> Any:
+    safe_path = file_path.strip("/").replace("\\", "/")
+    target = (_upload_root_path() / safe_path).resolve()
+    root = _upload_root_path().resolve()
+    if os.path.commonpath([str(root), str(target)]) != str(root) or not target.exists():
+        return jsonify({"message": "文件不存在"}), 404
+    return send_from_directory(root, safe_path)
+
+
+@api_bp.post("/uploads")
+@auth_required()
+def upload_attachment() -> Any:
+    passed, limited_response = _enforce_rate_limit("direct_upload", RATE_LIMIT_UPLOAD_COUNT)
+    if not passed:
+        return limited_response
+
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"message": "缺少上传文件"}), 400
+    raw_name = (file.filename or "").strip() or "file"
+    mime_type = (file.mimetype or "").strip().lower()
+    payload_bytes = file.read()
+    if not payload_bytes:
+        return jsonify({"message": "上传文件为空"}), 400
+    if len(payload_bytes) > MAX_ATTACHMENT_SIZE_BYTES:
+        return jsonify({"message": "单个附件不能超过 20MB"}), 400
+
+    allow_documents = str(request.args.get("allow_documents", "0")).strip() == "1"
+    is_media = any(mime_type.startswith(prefix) for prefix in MEDIA_MIME_PREFIXES)
+    is_doc = allow_documents and mime_type in DOC_MIME_TYPES
+    if not (is_media or is_doc):
+        return jsonify({"message": "附件类型不在允许范围内"}), 400
+    if not _is_magic_signature_valid(mime_type, payload_bytes):
+        return jsonify({"message": "附件内容与类型不匹配"}), 400
+
+    upload_scope = str(request.args.get("scope", "general")).strip() or "general"
+    stored = _store_upload_bytes(
+        payload_bytes=payload_bytes,
+        mime_type=mime_type,
+        file_name=raw_name,
+        upload_scope=upload_scope,
+    )
+    return jsonify(stored), 201
 
 
 @api_bp.post("/auth/login")
@@ -800,8 +999,12 @@ def create_ticket() -> Any:
         passed, limited_response = _enforce_rate_limit("ticket_upload", RATE_LIMIT_UPLOAD_COUNT)
         if not passed:
             return limited_response
-    is_valid_attachment, attachment_message = _validate_attachments_payload(attachments, allow_documents=False)
-    if not is_valid_attachment:
+    normalized_attachments, attachment_message = _normalize_and_persist_attachments(
+        attachments,
+        allow_documents=False,
+        upload_scope="ticket",
+    )
+    if attachment_message:
         return jsonify({"message": attachment_message}), 400
 
     role_ids = normalize_role_ids(payload)
@@ -821,7 +1024,7 @@ def create_ticket() -> Any:
         status=initial_flow["status"],
         flow_stage=initial_flow["flow_stage"],
         priority=payload["priority"],
-        attachments=json.dumps(attachments, ensure_ascii=False),
+        attachments=json.dumps(normalized_attachments, ensure_ascii=False),
         start_time=start_time,
         end_time=end_time,
         project_id=project.id,
@@ -971,10 +1174,14 @@ def update_ticket(ticket_id: int) -> Any:
     if "end_time" in payload and payload["end_time"] not in (None, ""):
         ticket.end_time = parse_iso(payload["end_time"])
     if "attachments" in payload:
-        is_valid_attachment, attachment_message = _validate_attachments_payload(payload["attachments"], allow_documents=False)
-        if not is_valid_attachment:
+        normalized_attachments, attachment_message = _normalize_and_persist_attachments(
+            payload["attachments"],
+            allow_documents=False,
+            upload_scope="ticket",
+        )
+        if attachment_message:
             return jsonify({"message": attachment_message}), 400
-        ticket.attachments = json.dumps(payload["attachments"], ensure_ascii=False)
+        ticket.attachments = json.dumps(normalized_attachments, ensure_ascii=False)
     role_changed = any(field in payload for field in ["executor_id", "planner_id", "tester_id", "ticket_type", "sub_type"])
     if role_changed:
         old_owner_id = ticket.current_owner_id
@@ -1387,19 +1594,26 @@ def create_wiki_article() -> Any:
     if not title:
         return jsonify({"message": "标题不能为空"}), 400
     content = payload.get("content") or ""
+    normalized_content, content_error = _persist_inline_media_in_html(content, upload_scope="wiki-inline")
+    if content_error:
+        return jsonify({"message": content_error}), 400
     attachments = payload.get("attachments") or []
     if attachments:
         passed, limited_response = _enforce_rate_limit("wiki_upload", RATE_LIMIT_UPLOAD_COUNT)
         if not passed:
             return limited_response
-    is_valid_attachment, attachment_message = _validate_attachments_payload(attachments, allow_documents=True)
-    if not is_valid_attachment:
+    normalized_attachments, attachment_message = _normalize_and_persist_attachments(
+        attachments,
+        allow_documents=True,
+        upload_scope="wiki",
+    )
+    if attachment_message:
         return jsonify({"message": attachment_message}), 400
     category = _resolve_wiki_category(payload.get("category_name"))
     article = WikiArticle(
         title=title,
-        content=content,
-        attachments=json.dumps(attachments, ensure_ascii=False),
+        content=normalized_content,
+        attachments=json.dumps(normalized_attachments, ensure_ascii=False),
         category_id=category.id if category else None,
         creator_id=request.current_user.id,
         updater_id=request.current_user.id,
@@ -1424,13 +1638,21 @@ def update_wiki_article(article_id: int) -> Any:
     if not title:
         return jsonify({"message": "标题不能为空"}), 400
     article.title = title
-    article.content = payload.get("content", article.content) or ""
+    if "content" in payload:
+        normalized_content, content_error = _persist_inline_media_in_html(payload.get("content", ""), upload_scope="wiki-inline")
+        if content_error:
+            return jsonify({"message": content_error}), 400
+        article.content = normalized_content
     if "attachments" in payload:
         attachments = payload.get("attachments") or []
-        is_valid_attachment, attachment_message = _validate_attachments_payload(attachments, allow_documents=True)
-        if not is_valid_attachment:
+        normalized_attachments, attachment_message = _normalize_and_persist_attachments(
+            attachments,
+            allow_documents=True,
+            upload_scope="wiki",
+        )
+        if attachment_message:
             return jsonify({"message": attachment_message}), 400
-        article.attachments = json.dumps(attachments, ensure_ascii=False)
+        article.attachments = json.dumps(normalized_attachments, ensure_ascii=False)
     if "category_name" in payload:
         category = _resolve_wiki_category(payload.get("category_name"))
         article.category_id = category.id if category else None
