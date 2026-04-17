@@ -10,6 +10,7 @@ export function useProjectModule({
   versions,
   dashboard,
   stats,
+  analytics,
   notification,
   projectHub,
   userDialog,
@@ -102,6 +103,28 @@ export function useProjectModule({
     Object.assign(stats, data);
   }
 
+  async function loadAnalytics(projectId = currentProjectId.value, versionId = currentVersionId.value) {
+    const params = {};
+    if (projectId) params.project_id = projectId;
+    if (versionId) params.version_id = versionId;
+    params.days = analytics.range_days || 14;
+    params.bucket_hours = analytics.density_bucket_hours || 6;
+    if (analytics.selected_density_member_id) {
+      params.member_id = analytics.selected_density_member_id;
+    }
+    const [progressRes, riskRes, workloadRes, densityRes] = await Promise.all([
+      api.get("/analytics/progress-overview", { params }),
+      api.get("/analytics/risk-alerts", { params: { ...params, limit: 20 } }),
+      api.get("/analytics/workload", { params: { ...params, group_by: analytics.workload_group_by || "position" } }),
+      api.get("/analytics/workload-density", { params }),
+    ]);
+    analytics.progress = progressRes.data || { summary: {}, by_status: {}, flow_stage: {} };
+    analytics.risk = riskRes.data || { items: [], total: 0 };
+    analytics.workload = workloadRes.data || { group_by: "position", rows: [], total_active_tickets: 0 };
+    analytics.density = densityRes.data || { members: [], selected_member_id: null, calendar_weeks: [], max_task_count: 0 };
+    analytics.selected_density_member_id = analytics.density?.selected_member_id || null;
+  }
+
   async function loadNotifications(projectId = currentProjectId.value) {
     const params = {};
     if (projectId) params.project_id = projectId;
@@ -141,7 +164,7 @@ export function useProjectModule({
     ticketPage.value = 1;
     await Promise.all([
       loadDashboard(currentProjectId.value),
-      loadStats(currentProjectId.value),
+      loadAnalytics(currentProjectId.value),
       loadNotifications(currentProjectId.value),
       loadProjectHub(currentProjectId.value),
       loadTickets(),
@@ -152,7 +175,7 @@ export function useProjectModule({
     currentVersionId.value = value || null;
     ticketFilter.version_id = currentVersionId.value;
     ticketPage.value = 1;
-    await Promise.all([loadDashboard(currentProjectId.value), loadTickets()]);
+    await Promise.all([loadDashboard(currentProjectId.value), loadAnalytics(currentProjectId.value), loadTickets()]);
   }
 
   async function selectVersionByButton(versionId) {
@@ -170,12 +193,32 @@ export function useProjectModule({
     ticketFilter.version_id = currentVersionId.value;
     await Promise.all([
       loadDashboard(currentProjectId.value),
-      loadStats(currentProjectId.value),
+      loadAnalytics(currentProjectId.value),
       loadNotifications(currentProjectId.value),
       loadProjectHub(currentProjectId.value),
       loadTickets(),
       loadWikiArticles(),
     ]);
+  }
+
+  async function setAnalyticsRangeDays(days) {
+    analytics.range_days = days;
+    await loadAnalytics(currentProjectId.value);
+  }
+
+  async function setAnalyticsWorkloadGroup(groupBy) {
+    analytics.workload_group_by = groupBy || "position";
+    await loadAnalytics(currentProjectId.value);
+  }
+
+  async function setAnalyticsDensityMember(memberId) {
+    analytics.selected_density_member_id = memberId || null;
+    await loadAnalytics(currentProjectId.value);
+  }
+
+  async function setAnalyticsDensityBucket(hours) {
+    analytics.density_bucket_hours = hours || 6;
+    await loadAnalytics(currentProjectId.value);
   }
 
   function openUserDialog(row) {
@@ -277,6 +320,7 @@ export function useProjectModule({
     loadProjectHub,
     loadDashboard,
     loadStats,
+    loadAnalytics,
     loadNotifications,
     notificationFeed,
     loadNotificationFeed,
@@ -285,6 +329,10 @@ export function useProjectModule({
     onGlobalProjectChange,
     onGlobalVersionChange,
     selectVersionByButton,
+    setAnalyticsRangeDays,
+    setAnalyticsWorkloadGroup,
+    setAnalyticsDensityMember,
+    setAnalyticsDensityBucket,
     bootstrap,
     openUserDialog,
     saveUser,

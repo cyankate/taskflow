@@ -1,16 +1,67 @@
 import { computed, ref, watch } from "vue";
 
-export function usePaginationState({ dashboard, dashboardViewMode, tickets, projectHub, wikiArticles }) {
+function groupTasksByParentChain(list) {
+  const items = Array.isArray(list) ? list : [];
+  if (!items.length) return [];
+
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const childrenMap = new Map();
+  const orderIndex = new Map(items.map((item, index) => [item.id, index]));
+
+  for (const item of items) {
+    const parentId = item?.parent_task_id;
+    if (!parentId || !byId.has(parentId)) continue;
+    if (!childrenMap.has(parentId)) childrenMap.set(parentId, []);
+    childrenMap.get(parentId).push(item);
+  }
+
+  for (const [, children] of childrenMap) {
+    children.sort((a, b) => (orderIndex.get(a.id) || 0) - (orderIndex.get(b.id) || 0));
+  }
+
+  const roots = items
+    .filter((item) => {
+      const parentId = item?.parent_task_id;
+      return !parentId || !byId.has(parentId);
+    })
+    .sort((a, b) => (orderIndex.get(a.id) || 0) - (orderIndex.get(b.id) || 0));
+
+  const result = [];
+  const visited = new Set();
+
+  function appendNode(node) {
+    if (!node || visited.has(node.id)) return;
+    visited.add(node.id);
+    result.push(node);
+    const children = childrenMap.get(node.id) || [];
+    for (const child of children) appendNode(child);
+  }
+
+  for (const root of roots) appendNode(root);
+  for (const item of items) appendNode(item);
+
+  return result;
+}
+
+export function usePaginationState({ dashboard, dashboardViewMode, projectHubTickets, projectHub, wikiArticles }) {
   const dashboardTaskPage = ref(1);
   const dashboardTaskPageSize = 8;
   const dashboardBugPage = ref(1);
   const dashboardBugPageSize = 12;
-  const dashboardTasks = computed(() =>
-    dashboardViewMode.value === "created" ? dashboard.my_created_tasks || [] : dashboard.my_current_tasks || [],
-  );
-  const dashboardBugs = computed(() =>
-    dashboardViewMode.value === "created" ? dashboard.my_created_bugs || [] : dashboard.my_current_bugs || [],
-  );
+  const dashboardTasks = computed(() => {
+    const list =
+      dashboardViewMode.value === "created"
+        ? dashboard.my_created_tasks || []
+        : dashboardViewMode.value === "related"
+          ? dashboard.my_related_tasks || []
+          : dashboard.my_current_tasks || [];
+    return groupTasksByParentChain(list);
+  });
+  const dashboardBugs = computed(() => {
+    if (dashboardViewMode.value === "created") return dashboard.my_created_bugs || [];
+    if (dashboardViewMode.value === "related") return dashboard.my_related_bugs || [];
+    return dashboard.my_current_bugs || [];
+  });
 
   const pagedDashboardTasks = computed(() => {
     const start = (dashboardTaskPage.value - 1) * dashboardTaskPageSize;
@@ -30,7 +81,7 @@ export function usePaginationState({ dashboard, dashboardViewMode, tickets, proj
   const wikiPageSize = 10;
 
   const pagedTickets = computed(() => {
-    const list = tickets.value || [];
+    const list = projectHubTickets.value || [];
     const start = (ticketPage.value - 1) * ticketPageSize.value;
     return list.slice(start, start + ticketPageSize.value);
   });
@@ -62,9 +113,16 @@ export function usePaginationState({ dashboard, dashboardViewMode, tickets, proj
       if (dashboardBugPage.value > totalPages) dashboardBugPage.value = totalPages;
     },
   );
+  watch(
+    () => dashboardViewMode.value,
+    () => {
+      dashboardTaskPage.value = 1;
+      dashboardBugPage.value = 1;
+    },
+  );
 
   watch(
-    () => tickets.value.length,
+    () => projectHubTickets.value.length,
     (len) => {
       const totalPages = Math.max(1, Math.ceil(len / ticketPageSize.value) || 1);
       if (ticketPage.value > totalPages) ticketPage.value = totalPages;

@@ -28,6 +28,14 @@ from taskflow.models import (
     ticket_assignees,
 )
 from taskflow.services.auth_service import auth_required, generate_token
+from taskflow.services.analytics_service import (
+    build_progress_overview,
+    build_risk_alerts,
+    build_workload,
+    build_workload_density,
+    get_filtered_tickets,
+    resolve_scope,
+)
 from taskflow.services.ticket_service import (
     apply_flow_action,
     create_history,
@@ -1455,23 +1463,35 @@ def dashboard() -> Any:
     project_id = request.args.get("project_id", type=int)
     version_id = request.args.get("version_id", type=int)
     now = _to_utc_naive(now_utc())
-    my_tickets_query = Ticket.query.filter(or_(Ticket.current_owner_id == user.id, Ticket.creator_id == user.id))
     all_tickets_query = Ticket.query
     if project_id:
-        my_tickets_query = my_tickets_query.filter(Ticket.project_id == project_id)
         all_tickets_query = all_tickets_query.filter(Ticket.project_id == project_id)
     if version_id:
-        my_tickets_query = my_tickets_query.filter(Ticket.version_id == version_id)
         all_tickets_query = all_tickets_query.filter(Ticket.version_id == version_id)
-    my_tickets = my_tickets_query.order_by(Ticket.end_time.asc()).all()
+    all_tickets = all_tickets_query.order_by(Ticket.end_time.asc()).all()
+    my_tickets = [ticket for ticket in all_tickets if ticket.current_owner_id == user.id or ticket.creator_id == user.id]
+    my_related_tickets: list[Ticket] = []
+    for ticket in all_tickets:
+        if (
+            ticket.current_owner_id == user.id
+            or ticket.creator_id == user.id
+            or ticket.executor_id == user.id
+            or ticket.planner_id == user.id
+            or ticket.tester_id == user.id
+            or any(assignee.id == user.id for assignee in ticket.assignees)
+        ):
+            my_related_tickets.append(ticket)
     pending_status = {"待处理", "待验收", "待测试"}
     my_current = [ticket.to_dict() for ticket in my_tickets if ticket.current_owner_id == user.id and ticket.status in pending_status]
     my_created = [ticket.to_dict() for ticket in my_tickets if ticket.creator_id == user.id and ticket.status in pending_status]
-    my_pending = my_current
-    my_pending_tasks = [ticket for ticket in my_current if ticket.get("ticket_type") == "需求单"]
-    my_pending_bugs = [ticket for ticket in my_current if ticket.get("ticket_type") == "BUG单"]
+    my_related = [ticket.to_dict() for ticket in my_related_tickets]
+    my_current_tasks = [ticket for ticket in my_current if ticket.get("ticket_type") == "需求单"]
+    my_current_bugs = [ticket for ticket in my_current if ticket.get("ticket_type") == "BUG单"]
     my_created_tasks = [ticket for ticket in my_created if ticket.get("ticket_type") == "需求单"]
     my_created_bugs = [ticket for ticket in my_created if ticket.get("ticket_type") == "BUG单"]
+    my_related_tasks = [ticket for ticket in my_related if ticket.get("ticket_type") == "需求单"]
+    my_related_bugs = [ticket for ticket in my_related if ticket.get("ticket_type") == "BUG单"]
+
     my_overdue = [
         ticket.to_dict()
         for ticket in my_tickets
@@ -1479,12 +1499,12 @@ def dashboard() -> Any:
     ]
 
     by_status = {status: 0 for status in TICKET_STATUS}
-    for row in all_tickets_query.all():
+    for row in all_tickets:
         if row.status not in by_status:
             by_status[row.status] = 0
         by_status[row.status] += 1
 
-    my_ticket_ids = [ticket.id for ticket in my_tickets]
+    my_ticket_ids = [ticket.id for ticket in my_related_tickets]
     recent_histories_query = TicketHistory.query.join(Ticket, TicketHistory.ticket_id == Ticket.id).join(
         Project, Ticket.project_id == Project.id
     )
@@ -1510,20 +1530,16 @@ def dashboard() -> Any:
     return jsonify(
         {
             "my_current": my_current,
-            "my_current_tasks": my_pending_tasks,
-            "my_current_bugs": my_pending_bugs,
+            "my_current_tasks": my_current_tasks,
+            "my_current_bugs": my_current_bugs,
             "my_created": my_created,
             "my_created_tasks": my_created_tasks,
             "my_created_bugs": my_created_bugs,
-            "my_pending": my_pending,
-            "my_pending_tasks": my_pending_tasks,
-            "my_pending_bugs": my_pending_bugs,
+            "my_related": my_related,
+            "my_related_tasks": my_related_tasks,
+            "my_related_bugs": my_related_bugs,
             "my_overdue": my_overdue,
-            "current_task_count": len(my_pending_tasks),
-            "current_bug_count": len(my_pending_bugs),
-            "created_task_count": len(my_created_tasks),
-            "created_bug_count": len(my_created_bugs),
-            "ticket_count": all_tickets_query.count(),
+            "ticket_count": len(all_tickets),
             "by_status": by_status,
             "my_dynamics": my_dynamics,
         }
@@ -1570,6 +1586,86 @@ def statistics() -> Any:
             "trend": trend,
         }
     )
+
+
+@api_bp.get("/analytics/progress-overview")
+@auth_required()
+def analytics_progress_overview() -> Any:
+    project_id = request.args.get("project_id", type=int)
+    version_id = request.args.get("version_id", type=int)
+    days = request.args.get("days", default=14, type=int)
+    from_raw = request.args.get("from")
+    to_raw = request.args.get("to")
+    scope = resolve_scope(
+        project_id=project_id,
+        version_id=version_id,
+        days=days,
+        from_time=parse_iso(from_raw) if from_raw else None,
+        to_time=parse_iso(to_raw) if to_raw else None,
+    )
+    tickets = get_filtered_tickets(scope)
+    return jsonify(build_progress_overview(scope, tickets))
+
+
+@api_bp.get("/analytics/risk-alerts")
+@auth_required()
+def analytics_risk_alerts() -> Any:
+    project_id = request.args.get("project_id", type=int)
+    version_id = request.args.get("version_id", type=int)
+    days = request.args.get("days", default=14, type=int)
+    limit = request.args.get("limit", default=20, type=int)
+    from_raw = request.args.get("from")
+    to_raw = request.args.get("to")
+    scope = resolve_scope(
+        project_id=project_id,
+        version_id=version_id,
+        days=days,
+        from_time=parse_iso(from_raw) if from_raw else None,
+        to_time=parse_iso(to_raw) if to_raw else None,
+    )
+    tickets = get_filtered_tickets(scope)
+    return jsonify(build_risk_alerts(scope, tickets, limit=limit))
+
+
+@api_bp.get("/analytics/workload")
+@auth_required()
+def analytics_workload() -> Any:
+    project_id = request.args.get("project_id", type=int)
+    version_id = request.args.get("version_id", type=int)
+    days = request.args.get("days", default=14, type=int)
+    group_by = (request.args.get("group_by") or "position").strip().lower()
+    from_raw = request.args.get("from")
+    to_raw = request.args.get("to")
+    scope = resolve_scope(
+        project_id=project_id,
+        version_id=version_id,
+        days=days,
+        from_time=parse_iso(from_raw) if from_raw else None,
+        to_time=parse_iso(to_raw) if to_raw else None,
+    )
+    tickets = get_filtered_tickets(scope)
+    return jsonify(build_workload(scope, tickets, group_by=group_by))
+
+
+@api_bp.get("/analytics/workload-density")
+@auth_required()
+def analytics_workload_density() -> Any:
+    project_id = request.args.get("project_id", type=int)
+    version_id = request.args.get("version_id", type=int)
+    days = request.args.get("days", default=14, type=int)
+    member_id = request.args.get("member_id", type=int)
+    bucket_hours = request.args.get("bucket_hours", default=6, type=int)
+    from_raw = request.args.get("from")
+    to_raw = request.args.get("to")
+    scope = resolve_scope(
+        project_id=project_id,
+        version_id=version_id,
+        days=days,
+        from_time=parse_iso(from_raw) if from_raw else None,
+        to_time=parse_iso(to_raw) if to_raw else None,
+    )
+    tickets = get_filtered_tickets(scope)
+    return jsonify(build_workload_density(scope, tickets, member_id=member_id, bucket_hours=bucket_hours))
 
 
 @api_bp.get("/notifications")

@@ -79,6 +79,16 @@ export function useTaskflowApp() {
   const tickets = ref([]);
   const dashboard = reactive({});
   const stats = reactive({});
+  const analytics = reactive({
+    range_days: 14,
+    workload_group_by: "position",
+    density_bucket_hours: 6,
+    selected_density_member_id: null,
+    progress: { scope: {}, summary: {}, by_status: {}, flow_stage: {} },
+    risk: { items: [], total: 0 },
+    workload: { group_by: "position", total_active_tickets: 0, rows: [] },
+    density: { scope: {}, members: [], selected_member_id: null, calendar_weeks: [], max_task_count: 0 },
+  });
   const notification = reactive({
     new_ticket_count: 0,
     overdue_count: 0,
@@ -105,15 +115,27 @@ export function useTaskflowApp() {
   });
 
   const projectHubTicketViewMode = ref("list");
+  const projectHubTicketTypeMode = ref("all");
   const notificationDrawerVisible = ref(false);
   const lastPolledUnreadCount = ref(null);
   const notificationPollTimer = ref(null);
   const notificationPolling = ref(false);
 
+  const projectHubFilteredTickets = computed(() => {
+    const list = tickets.value || [];
+    if (projectHubTicketTypeMode.value === "task") {
+      return list.filter((item) => item.ticket_type === "需求单");
+    }
+    if (projectHubTicketTypeMode.value === "bug") {
+      return list.filter((item) => item.ticket_type === "BUG单");
+    }
+    return list;
+  });
+
   const kanbanColumns = computed(() => {
     const statuses = meta.ticket_status || [];
     const byStatus = {};
-    for (const t of tickets.value) {
+    for (const t of projectHubFilteredTickets.value) {
       const st = t.status || "待处理";
       if (!byStatus[st]) byStatus[st] = [];
       byStatus[st].push(t);
@@ -227,9 +249,9 @@ export function useTaskflowApp() {
     article: {},
   });
 
-  const workloadRows = computed(() =>
-    Object.entries(stats.workload_by_position || {}).map(([position, count]) => ({ position, count })),
-  );
+  const workloadRows = computed(() => analytics.workload?.rows || []);
+  const densityCalendarWeeks = computed(() => analytics.density?.calendar_weeks || []);
+  const densityMaxOverlap = computed(() => Number(analytics.density?.max_task_count || 0));
   const userInitial = computed(() => {
     const text = (user.display_name || user.username || "U").toString().trim();
     return text ? text[0].toUpperCase() : "U";
@@ -277,7 +299,7 @@ export function useTaskflowApp() {
   } = usePaginationState({
     dashboard,
     dashboardViewMode,
-    tickets,
+    projectHubTickets: projectHubFilteredTickets,
     projectHub,
     wikiArticles,
   });
@@ -393,6 +415,7 @@ export function useTaskflowApp() {
     loadProjectHub,
     loadDashboard,
     loadStats,
+    loadAnalytics,
     loadNotifications,
     notificationFeed,
     loadNotificationFeed,
@@ -401,6 +424,10 @@ export function useTaskflowApp() {
     onGlobalProjectChange,
     onGlobalVersionChange,
     selectVersionByButton,
+    setAnalyticsRangeDays,
+    setAnalyticsWorkloadGroup,
+    setAnalyticsDensityMember,
+    setAnalyticsDensityBucket,
     bootstrap,
     openUserDialog,
     saveUser,
@@ -422,6 +449,7 @@ export function useTaskflowApp() {
     versions,
     dashboard,
     stats,
+    analytics,
     notification,
     projectHub,
     userDialog,
@@ -554,7 +582,6 @@ export function useTaskflowApp() {
     ticketDialog.form.ticket_type = "需求单";
     ticketDialog.form.parent_task_id = parentId;
     ticketDialog.form.related_task_id = null;
-    ticketDialog.form.title = `${ticketDetail.ticket.title || ""}-子任务`;
   }
 
   async function createBugFromDetail() {
@@ -564,7 +591,6 @@ export function useTaskflowApp() {
     ticketDialog.form.ticket_type = "BUG单";
     ticketDialog.form.parent_task_id = null;
     ticketDialog.form.related_task_id = relatedId;
-    ticketDialog.form.title = `${ticketDetail.ticket.title || ""}-关联BUG`;
   }
 
   async function runTopbarSearch() {
@@ -697,7 +723,7 @@ export function useTaskflowApp() {
     await Promise.all([
       loadTickets(),
       loadDashboard(currentProjectId.value),
-      loadStats(currentProjectId.value),
+      loadAnalytics(currentProjectId.value),
       loadNotifications(currentProjectId.value),
       loadProjectHub(currentProjectId.value),
     ]);
@@ -736,6 +762,7 @@ export function useTaskflowApp() {
     token,
     user,
     activeTab,
+    dashboardViewMode,
     currentProjectId,
     currentVersionId,
     globalSearchKeyword,
@@ -747,10 +774,13 @@ export function useTaskflowApp() {
     tickets,
     dashboard,
     stats,
+    analytics,
     notification,
     notificationDrawerVisible,
     notificationFeed,
     projectHubTicketViewMode,
+    projectHubTicketTypeMode,
+    projectHubFilteredTickets,
     kanbanColumns,
     projectHub,
     versionForm,
@@ -775,6 +805,8 @@ export function useTaskflowApp() {
     ticketAttachmentError,
     wikiDetail,
     workloadRows,
+    densityCalendarWeeks,
+    densityMaxOverlap,
     userInitial,
     MAX_ATTACHMENT_SIZE_MB,
     MAX_ATTACHMENT_SIZE_BYTES,
@@ -824,6 +856,11 @@ export function useTaskflowApp() {
     clearTopbarSearch,
     loadDashboard,
     loadStats,
+    loadAnalytics,
+    setAnalyticsRangeDays,
+    setAnalyticsWorkloadGroup,
+    setAnalyticsDensityMember,
+    setAnalyticsDensityBucket,
     loadNotifications,
     loadNotificationFeed,
     markNotificationRead,

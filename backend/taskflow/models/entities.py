@@ -125,6 +125,8 @@ class Ticket(db.Model):
             "parent_task_title": self.parent_task.title if self.parent_task else "",
             "related_task_id": self.related_task_id,
             "related_task_title": self.related_task.title if self.related_task else "",
+            "related_task_type": self.related_task.ticket_type if self.related_task else "",
+            "related_task_sub_type": self.related_task.sub_type if self.related_task else "",
             "current_owner_id": self.current_owner_id,
             "current_owner_name": self.current_owner.display_name if self.current_owner else "",
             "executor_id": self.executor_id,

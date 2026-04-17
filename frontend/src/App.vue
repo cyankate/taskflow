@@ -142,16 +142,29 @@
           <div v-if="!ticketDetail.visible" key="content-list">
           <section v-show="activeTab === 'dashboard'">
           <div class="dashboard-view-toggle-row">
-            <el-radio-group v-model="dashboardViewMode" size="small">
-              <el-radio-button label="current">待我处理</el-radio-button>
-              <el-radio-button label="created">我创建的</el-radio-button>
+            <el-radio-group
+              :model-value="dashboardViewMode"
+              size="small"
+              @update:model-value="onDashboardViewModeChange"
+            >
+              <el-radio-button label="current" value="current">待我处理</el-radio-button>
+              <el-radio-button label="created" value="created">我创建的</el-radio-button>
+              <el-radio-button label="related" value="related">和我有关的单</el-radio-button>
             </el-radio-group>
           </div>
           <div class="dashboard-grid">
             <div class="dashboard-column dashboard-left-column">
               <el-card class="dashboard-panel dashboard-task-card">
                 <template #header>
-                  <div class="dashboard-panel-title">{{ dashboardViewMode === "created" ? "我创建的需求" : "待我处理需求" }}</div>
+                  <div class="dashboard-panel-title">
+                    {{
+                      dashboardViewMode === "created"
+                        ? "我创建的需求"
+                        : dashboardViewMode === "related"
+                          ? "和我有关的需求"
+                          : "待我处理需求"
+                    }}
+                  </div>
                 </template>
                 <el-table
                   :data="pagedDashboardTasks"
@@ -160,18 +173,65 @@
                   class="clickable-ticket-table dashboard-main-table"
                   @row-click="handleTicketRowClick"
                 >
-                  <el-table-column prop="title" label="标题" min-width="230" show-overflow-tooltip />
+                  <el-table-column label="标题" min-width="270" show-overflow-tooltip>
+                    <template #default="scope">
+                      <div class="dashboard-title-cell" :class="{ 'is-child-task': isChildTask(scope.row) }">
+                        <span
+                          v-if="getTaskRelationRole(scope.row)"
+                          :class="[
+                            'dashboard-link-badge',
+                            `is-${getTaskRelationRole(scope.row)}`,
+                            { 'is-child-offset': getTaskRelationRole(scope.row) === 'child' },
+                          ]"
+                        >
+                          {{ getTaskRelationRole(scope.row) === "parent" ? "父" : "子" }}
+                        </span>
+                        <span class="dashboard-type-dot task">{{ getTaskTypeDotText(scope.row) }}</span>
+                        <div class="dashboard-title-main">
+                          <div class="dashboard-title-line">
+                            <span class="dashboard-ticket-id" @click.stop="copyTicketId(scope.row.id)">#{{ scope.row.id }}</span>
+                            <span>{{ scope.row.title }}</span>
+                          </div>
+                          <div v-if="getTaskRelationText(scope.row)" class="dashboard-task-relation">
+                            {{ getTaskRelationText(scope.row) }}
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="状态" width="138">
                     <template #default="scope">
-                      <span>{{ scope.row.status }}</span>
+                      <el-tag size="small" effect="light" :type="getDashboardStatusTagType(scope.row.status)">
+                        {{ scope.row.status }}
+                      </el-tag>
                       <el-tag v-if="isTicketOverdue(scope.row)" size="small" type="danger" effect="plain" class="status-overdue-tag">
                         已逾期
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column prop="priority" label="优先级" width="72" />
+                  <el-table-column label="优先级" width="102">
+                    <template #default="scope">
+                      <span class="dashboard-priority-chip">
+                        <span :class="['dashboard-priority-dot', getDashboardPriorityDotClass(scope.row.priority)]"></span>
+                        {{ scope.row.priority }}
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="负责人" width="126">
+                    <template #default="scope">
+                      <div class="dashboard-owner-cell">
+                        <span class="dashboard-owner-avatar">{{ getDashboardOwnerInitial(scope.row) }}</span>
+                        <span class="dashboard-owner-name">{{ getDashboardOwnerName(scope.row) }}</span>
+                      </div>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="截止" width="140">
-                    <template #default="scope">{{ formatDeadlineSlot(scope.row.end_time) }}</template>
+                    <template #default="scope">
+                      <div class="dashboard-deadline-cell">
+                        <div>{{ formatDeadlineSlot(scope.row.end_time) }}</div>
+                        <div :class="['dashboard-deadline-hint', getDeadlineHintType(scope.row)]">{{ getDeadlineHint(scope.row) }}</div>
+                      </div>
+                    </template>
                   </el-table-column>
                 </el-table>
                 <div v-if="dashboardTasks.length > dashboardTaskPageSize" class="dashboard-pagination">
@@ -205,7 +265,15 @@
             <div class="dashboard-column dashboard-right-column">
               <el-card class="dashboard-panel dashboard-bug-card">
                 <template #header>
-                  <div class="dashboard-panel-title">{{ dashboardViewMode === "created" ? "我创建的BUG" : "待我处理BUG" }}</div>
+                  <div class="dashboard-panel-title">
+                    {{
+                      dashboardViewMode === "created"
+                        ? "我创建的BUG"
+                        : dashboardViewMode === "related"
+                          ? "和我有关的BUG"
+                          : "待我处理BUG"
+                    }}
+                  </div>
                 </template>
                 <el-table
                   :data="pagedDashboardBugs"
@@ -214,18 +282,52 @@
                   class="clickable-ticket-table dashboard-main-table"
                   @row-click="handleTicketRowClick"
                 >
-                  <el-table-column prop="title" label="标题" min-width="230" show-overflow-tooltip />
+                  <el-table-column label="标题" min-width="270" show-overflow-tooltip>
+                    <template #default="scope">
+                      <div class="dashboard-title-cell">
+                        <span class="dashboard-type-dot bug">{{ getBugTypeDotText(scope.row) }}</span>
+                        <div class="dashboard-title-main">
+                          <div class="dashboard-title-line">
+                            <span class="dashboard-ticket-id" @click.stop="copyTicketId(scope.row.id)">#{{ scope.row.id }}</span>
+                            <span>{{ scope.row.title }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="状态" width="138">
                     <template #default="scope">
-                      <span>{{ scope.row.status }}</span>
+                      <el-tag size="small" effect="light" :type="getDashboardStatusTagType(scope.row.status)">
+                        {{ scope.row.status }}
+                      </el-tag>
                       <el-tag v-if="isTicketOverdue(scope.row)" size="small" type="danger" effect="plain" class="status-overdue-tag">
                         已逾期
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column prop="priority" label="优先级" width="72" />
+                  <el-table-column label="优先级" width="102">
+                    <template #default="scope">
+                      <span class="dashboard-priority-chip">
+                        <span :class="['dashboard-priority-dot', getDashboardPriorityDotClass(scope.row.priority)]"></span>
+                        {{ scope.row.priority }}
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="负责人" width="126">
+                    <template #default="scope">
+                      <div class="dashboard-owner-cell">
+                        <span class="dashboard-owner-avatar">{{ getDashboardOwnerInitial(scope.row) }}</span>
+                        <span class="dashboard-owner-name">{{ getDashboardOwnerName(scope.row) }}</span>
+                      </div>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="截止" width="140">
-                    <template #default="scope">{{ formatDeadlineSlot(scope.row.end_time) }}</template>
+                    <template #default="scope">
+                      <div class="dashboard-deadline-cell">
+                        <div>{{ formatDeadlineSlot(scope.row.end_time) }}</div>
+                        <div :class="['dashboard-deadline-hint', getDeadlineHintType(scope.row)]">{{ getDeadlineHint(scope.row) }}</div>
+                      </div>
+                    </template>
                   </el-table-column>
                 </el-table>
                 <div v-if="dashboardBugs.length > dashboardBugPageSize" class="dashboard-pagination">
@@ -310,11 +412,37 @@
                 <template #header>
                   <div class="project-hub-card-head project-hub-tickets-head">
                     <span class="dashboard-panel-title">工单</span>
-                    <el-radio-group v-model="projectHubTicketViewMode" size="small" class="project-hub-view-toggle">
-                      <el-radio-button label="list">列表</el-radio-button>
-                      <el-radio-button label="kanban">看板</el-radio-button>
+                    <el-radio-group
+                      :model-value="projectHubTicketTypeMode"
+                      size="small"
+                      class="project-hub-type-toggle"
+                      @update:model-value="onProjectHubTicketTypeChange"
+                    >
+                      <el-radio-button label="all" value="all">全部</el-radio-button>
+                      <el-radio-button label="task" value="task">需求</el-radio-button>
+                      <el-radio-button label="bug" value="bug">BUG</el-radio-button>
                     </el-radio-group>
-                    <span class="project-hub-muted">共 {{ tickets.length }} 条</span>
+                    <span class="project-hub-muted">共 {{ projectHubFilteredTickets.length }} 条</span>
+                    <div class="project-hub-view-icons">
+                      <button
+                        type="button"
+                        class="project-view-icon-btn"
+                        :class="{ active: projectHubTicketViewMode === 'list' }"
+                        title="列表视图"
+                        @click="onProjectHubViewModeChange('list')"
+                      >
+                        <span aria-hidden="true">☰</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="project-view-icon-btn"
+                        :class="{ active: projectHubTicketViewMode === 'kanban' }"
+                        title="看板视图"
+                        @click="onProjectHubViewModeChange('kanban')"
+                      >
+                        <span aria-hidden="true">▦</span>
+                      </button>
+                    </div>
                   </div>
                 </template>
                 <div v-if="searchResultTip" class="ticket-search-floating">
@@ -403,7 +531,7 @@
                   <el-pagination
                     background
                     layout="total, sizes, prev, pager, next"
-                    :total="tickets.length"
+                    :total="projectHubFilteredTickets.length"
                     :page-sizes="[20, 30, 50, 100]"
                     v-model:page-size="ticketPageSize"
                     v-model:current-page="ticketPage"
@@ -413,30 +541,160 @@
               </el-card>
 
               <el-card class="project-hub-stats-card">
-                <template #header><div class="dashboard-panel-title">数据与报表</div></template>
-                <el-descriptions border :column="3" class="stats-desc compact">
-                  <el-descriptions-item label="工单总数">{{ projectHub.summary.total_tickets || 0 }}</el-descriptions-item>
-                  <el-descriptions-item label="进行中">{{ projectHub.summary.pending_tickets || 0 }}</el-descriptions-item>
-                  <el-descriptions-item label="已完成">{{ projectHub.summary.completed_tickets || 0 }}</el-descriptions-item>
-                  <el-descriptions-item label="BUG数">{{ projectHub.summary.bug_tickets || 0 }}</el-descriptions-item>
-                  <el-descriptions-item label="完成率">{{ stats.completion_rate || 0 }}%</el-descriptions-item>
-                  <el-descriptions-item label="逾期">{{ stats.overdue_count || 0 }}</el-descriptions-item>
-                </el-descriptions>
+                <template #header>
+                  <div class="project-hub-card-head">
+                    <div class="dashboard-panel-title">数据与报表</div>
+                    <div class="report-toolbar">
+                      <el-radio-group
+                        :model-value="analytics.range_days"
+                        size="small"
+                        @update:model-value="onAnalyticsRangeChange"
+                      >
+                        <el-radio-button :value="7">7天</el-radio-button>
+                        <el-radio-button :value="14">14天</el-radio-button>
+                        <el-radio-button :value="30">30天</el-radio-button>
+                      </el-radio-group>
+                      <el-button size="small" text @click="loadAnalytics(currentProjectId, currentVersionId)">刷新</el-button>
+                    </div>
+                  </div>
+                </template>
+                <div class="report-metric-grid">
+                  <div class="report-metric-item">
+                    <div class="report-metric-label">工单总数</div>
+                    <div class="report-metric-value">{{ analytics.progress.summary?.total || 0 }}</div>
+                  </div>
+                  <div class="report-metric-item">
+                    <div class="report-metric-label">进行中</div>
+                    <div class="report-metric-value">{{ analytics.progress.summary?.in_progress || 0 }}</div>
+                  </div>
+                  <div class="report-metric-item">
+                    <div class="report-metric-label">已完成</div>
+                    <div class="report-metric-value">{{ analytics.progress.summary?.done || 0 }}</div>
+                  </div>
+                  <div class="report-metric-item">
+                    <div class="report-metric-label">完成率</div>
+                    <div class="report-metric-value">{{ analytics.progress.summary?.completion_rate || 0 }}%</div>
+                  </div>
+                  <div class="report-metric-item">
+                    <div class="report-metric-label">逾期</div>
+                    <div class="report-metric-value">{{ analytics.progress.summary?.overdue || 0 }}</div>
+                  </div>
+                  <div class="report-metric-item">
+                    <div class="report-metric-label">即将逾期</div>
+                    <div class="report-metric-value">{{ analytics.progress.summary?.due_soon || 0 }}</div>
+                  </div>
+                </div>
+
                 <div class="stats-tables-compact">
                   <div class="stats-subsection">
-                    <div class="stats-subtitle">岗位工作量</div>
-                    <el-table :data="workloadRows" stripe size="small" max-height="140">
-                      <el-table-column prop="position" label="岗位" width="120" />
-                      <el-table-column prop="count" label="工单数" />
+                    <div class="stats-subtitle">风险预警</div>
+                    <el-table :data="analytics.risk.items || []" stripe size="small" max-height="190">
+                      <el-table-column label="风险" width="92">
+                        <template #default="scope">
+                          <el-tag size="small" :type="getRiskTagType(scope.row.risk_type)">{{ scope.row.risk_type }}</el-tag>
+                        </template>
+                      </el-table-column>
+                      <el-table-column label="工单" min-width="160" show-overflow-tooltip>
+                        <template #default="scope">#{{ scope.row.ticket_id }} {{ scope.row.title }}</template>
+                      </el-table-column>
+                      <el-table-column prop="current_owner_name" label="负责人" width="90" />
                     </el-table>
                   </div>
                   <div class="stats-subsection">
-                    <div class="stats-subtitle">7天趋势</div>
-                    <el-table :data="stats.trend || []" stripe size="small" max-height="140">
-                      <el-table-column prop="date" label="日期" width="100" />
-                      <el-table-column prop="updated_tickets" label="更新数" />
+                    <div class="stats-subtitle report-row-head">
+                      <span>人力负载</span>
+                      <el-radio-group
+                        :model-value="analytics.workload_group_by"
+                        size="small"
+                        @update:model-value="onAnalyticsWorkloadGroupChange"
+                      >
+                        <el-radio-button value="position">岗位</el-radio-button>
+                        <el-radio-button value="user">个人</el-radio-button>
+                      </el-radio-group>
+                    </div>
+                    <el-table :data="workloadRows" stripe size="small" max-height="190">
+                      <el-table-column
+                        v-if="analytics.workload_group_by === 'position'"
+                        prop="label"
+                        label="岗位"
+                        width="90"
+                      />
+                      <el-table-column
+                        v-else
+                        prop="user_name"
+                        label="成员"
+                        width="90"
+                        show-overflow-tooltip
+                      />
+                      <el-table-column prop="active_ticket_count" label="在制" width="60" />
+                      <el-table-column prop="weighted_load" label="负载" width="66">
+                        <template #default="scope">{{ Number(scope.row.weighted_load || 0).toFixed(1) }}</template>
+                      </el-table-column>
+                      <el-table-column prop="overdue_in_charge" label="逾期" width="60" />
                     </el-table>
                   </div>
+                </div>
+
+                <div class="stats-subsection density-section">
+                  <div class="stats-subtitle report-row-head">
+                    <span>个人任务密集度</span>
+                    <div class="density-filters">
+                      <el-select
+                        :model-value="analytics.selected_density_member_id"
+                        size="small"
+                        placeholder="选择成员"
+                        class="density-filter-member"
+                        @change="onAnalyticsDensityMemberChange"
+                      >
+                        <el-option
+                          v-for="item in analytics.density.members || []"
+                          :key="`density-member-${item.id}`"
+                          :label="item.name"
+                          :value="item.id"
+                        />
+                      </el-select>
+                    </div>
+                  </div>
+                  <div v-if="densityCalendarWeeks.length" class="density-timeline-wrap">
+                    <div class="density-calendar-head">
+                      <div class="density-week-col">周区间</div>
+                      <div v-for="(label, idx) in ['一', '二', '三', '四', '五', '六', '日']" :key="`weekday-${idx}`" class="density-weekday-col">
+                        周{{ label }}
+                      </div>
+                    </div>
+                    <div v-for="(week, wIdx) in densityCalendarWeeks" :key="`week-${wIdx}`" class="density-calendar-row">
+                      <div class="density-week-col">{{ week.week_label }}</div>
+                      <div
+                        v-for="day in week.days"
+                        :key="`${week.week_start}-${day.date}`"
+                        class="density-calendar-cell"
+                        :class="{ weekend: day.is_weekend }"
+                        :style="getDensityCellStyle(day.task_count, day.is_weekend)"
+                        :title="getDensityTooltip(day)"
+                      >
+                        <div class="density-cell-date">{{ day.date.slice(5) }}</div>
+                        <template v-if="day.is_weekend">
+                          <div class="density-day-empty">休</div>
+                        </template>
+                        <template v-else-if="day.tasks?.length">
+                          <button
+                            v-for="task in day.tasks.slice(0, 2)"
+                            :key="`density-task-${day.date}-${task.ticket_id}`"
+                            class="density-task-chip"
+                            :title="`#${task.ticket_id} ${task.title}`"
+                            type="button"
+                            @click.stop="openTicketDetail({ id: task.ticket_id })"
+                          >
+                            #{{ task.ticket_id }} {{ task.title }}
+                          </button>
+                          <div v-if="day.tasks.length > 2" class="density-task-more">+{{ day.tasks.length - 2 }}</div>
+                        </template>
+                        <div v-else class="density-day-empty">-</div>
+                      </div>
+                    </div>
+                    <div class="density-legend">颜色越深表示该工作日安排的需求单越密集（单日最高 {{ densityMaxOverlap }} 个）</div>
+                  </div>
+                  <el-empty v-else description="暂无密集度数据" :image-size="56" />
                 </div>
               </el-card>
             </div>
@@ -1510,7 +1768,8 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { ElMessage } from "element-plus";
 import { useTaskflowApp } from "./composables/useTaskflowApp";
 
 const {
@@ -1528,11 +1787,12 @@ const {
   versions,
   tickets,
   dashboard,
-  stats,
   notification,
   notificationDrawerVisible,
   notificationFeed,
   projectHubTicketViewMode,
+  projectHubTicketTypeMode,
+  projectHubFilteredTickets,
   kanbanColumns,
   openNotificationCenter,
   closeTicketDetail,
@@ -1560,7 +1820,10 @@ const {
   wikiAttachmentError,
   ticketAttachmentError,
   wikiDetail,
+  analytics,
   workloadRows,
+  densityCalendarWeeks,
+  densityMaxOverlap,
   userInitial,
   ticketDetailAttachments,
   detailCreatorName,
@@ -1594,6 +1857,10 @@ const {
   runTopbarSearch,
   clearTopbarSearch,
   loadProjectHub,
+  loadAnalytics,
+  setAnalyticsRangeDays,
+  setAnalyticsWorkloadGroup,
+  setAnalyticsDensityMember,
   loadWikiCategories,
   setWikiCategoryFilter,
   openWikiDialog,
@@ -1648,6 +1915,13 @@ const {
 } = useTaskflowApp();
 
 const descriptionEditorRef = ref(null);
+const dashboardTaskIdSet = computed(() => new Set((dashboardTasks.value || []).map((item) => item.id)));
+const hasTaskHierarchyInView = computed(() =>
+  (dashboardTasks.value || []).some((item) => {
+    const parentId = Number(item?.parent_task_id || 0);
+    return parentId > 0 && dashboardTaskIdSet.value.has(parentId);
+  }),
+);
 const DESCRIPTION_COLORS = [
   { label: "默认", value: "#303133" },
   { label: "红色", value: "#e53935" },
@@ -1931,6 +2205,197 @@ function isTicketOverdue(ticket) {
   return endTime.getTime() < Date.now();
 }
 
+function getDashboardStatusTagType(status) {
+  const map = {
+    待处理: "info",
+    待验收: "warning",
+    待测试: "primary",
+    已完成: "success",
+  };
+  return map[status] || "info";
+}
+
+function getTaskTypeDotText(ticket) {
+  const subType = String(ticket?.sub_type || "").trim();
+  if (subType) return subType[0];
+  const ticketType = String(ticket?.ticket_type || "").trim();
+  return ticketType ? ticketType[0] : "需";
+}
+
+function getBugTypeDotText(ticket) {
+  const relatedSubType = String(ticket?.related_task_sub_type || "").trim();
+  if (relatedSubType) return relatedSubType[0];
+  const relatedType = String(ticket?.related_task_type || "").trim();
+  if (relatedType) return relatedType[0];
+  return "B";
+}
+
+function getDashboardPriorityDotClass(priority) {
+  const map = {
+    低: "is-low",
+    中: "is-mid",
+    高: "is-high",
+    紧急: "is-urgent",
+  };
+  return map[priority] || "is-mid";
+}
+
+function getDashboardOwnerName(ticket) {
+  return ticket?.current_owner_name || ticket?.executor_name || ticket?.creator_name || "未分配";
+}
+
+function getDashboardOwnerInitial(ticket) {
+  const name = String(getDashboardOwnerName(ticket) || "").trim();
+  return name ? name[0].toUpperCase() : "U";
+}
+
+function hasLinkedParentInView(ticket) {
+  const parentId = Number(ticket?.parent_task_id || 0);
+  return parentId > 0 && dashboardTaskIdSet.value.has(parentId);
+}
+
+function isChildTask(ticket) {
+  return hasTaskHierarchyInView.value && hasLinkedParentInView(ticket);
+}
+
+function hasChildTasks(ticket) {
+  if (!hasTaskHierarchyInView.value) return false;
+  return (dashboardTasks.value || []).some(
+    (item) => Number(item?.parent_task_id || 0) === Number(ticket?.id || 0) && hasLinkedParentInView(item),
+  );
+}
+
+function getTaskRelationRole(ticket) {
+  if (isChildTask(ticket)) return "child";
+  if (hasChildTasks(ticket)) return "parent";
+  return "";
+}
+
+function getTaskRelationText(ticket) {
+  if (!hasTaskHierarchyInView.value) return "";
+  const parentId = Number(ticket?.parent_task_id || 0);
+  if (hasLinkedParentInView(ticket)) return `父 #${parentId}`;
+  const childCount = (dashboardTasks.value || []).filter(
+    (item) => Number(item?.parent_task_id || 0) === Number(ticket?.id || 0) && hasLinkedParentInView(item),
+  ).length;
+  if (childCount > 0) return `${childCount} 个子任务`;
+  return "";
+}
+
+function getDeadlineHint(ticket) {
+  const endTimeRaw = ticket?.end_time;
+  if (!endTimeRaw) return "未设置截止";
+  const endTime = new Date(endTimeRaw);
+  if (Number.isNaN(endTime.getTime())) return "截止时间异常";
+  const diffMs = endTime.getTime() - Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diffDays = Math.ceil(diffMs / dayMs);
+  if (diffDays < 0) return `已逾期 ${Math.abs(diffDays)} 天`;
+  if (diffDays === 0) return "今天截止";
+  return `剩余 ${diffDays} 天`;
+}
+
+function getDeadlineHintType(ticket) {
+  const endTimeRaw = ticket?.end_time;
+  if (!endTimeRaw) return "neutral";
+  const endTime = new Date(endTimeRaw);
+  if (Number.isNaN(endTime.getTime())) return "neutral";
+  const diffMs = endTime.getTime() - Date.now();
+  if (diffMs < 0) return "overdue";
+  if (diffMs <= 2 * 24 * 60 * 60 * 1000) return "soon";
+  return "normal";
+}
+
+async function copyTicketId(ticketId) {
+  const text = `#${ticketId}`;
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const input = document.createElement("input");
+      input.value = text;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+    }
+    ElMessage.success(`已复制工单号 ${text}`);
+  } catch {
+    ElMessage.error("复制失败，请手动复制");
+  }
+}
+
+function onDashboardViewModeChange(nextMode) {
+  dashboardViewMode.value = nextMode || "current";
+}
+
+function onProjectHubViewModeChange(nextMode) {
+  projectHubTicketViewMode.value = nextMode || "list";
+}
+
+function onProjectHubTicketTypeChange(nextMode) {
+  projectHubTicketTypeMode.value = nextMode || "all";
+  selectedTicketIds.value = [];
+  ticketPage.value = 1;
+}
+
+async function onAnalyticsRangeChange(days) {
+  await setAnalyticsRangeDays(Number(days || 14));
+}
+
+async function onAnalyticsWorkloadGroupChange(groupBy) {
+  await setAnalyticsWorkloadGroup(groupBy || "position");
+}
+
+async function onAnalyticsDensityMemberChange(memberId) {
+  await setAnalyticsDensityMember(memberId || null);
+}
+
+function getRiskTagType(riskType) {
+  if (riskType === "overdue") return "danger";
+  if (riskType === "due_soon") return "warning";
+  if (riskType === "stalled") return "info";
+  return "";
+}
+
+function getDensityCellStyle(taskCount, isWeekend = false) {
+  if (isWeekend) {
+    return {
+      background: "#f5f7fa",
+      borderColor: "#ebeef5",
+    };
+  }
+  const max = Math.max(Number(densityMaxOverlap.value || 0), 1);
+  const value = Number(taskCount || 0);
+  if (value <= 0) {
+    return {
+      background: "#ffffff",
+      borderColor: "#ebeef5",
+    };
+  }
+  if (value === 1) {
+    return {
+      background: "rgba(64, 158, 255, 0.4)",
+      borderColor: "rgba(64, 158, 255, 0.5)",
+    };
+  }
+  const maxOverlap = Math.max(max - 1, 1);
+  const normalized = Math.min((value - 1) / maxOverlap, 1);
+  const alpha = Math.min(0.35 + normalized * 0.55, 0.92);
+  return {
+    background: `rgba(64, 158, 255, ${alpha.toFixed(3)})`,
+    borderColor: "rgba(64, 158, 255, 0.45)",
+  };
+}
+
+function getDensityTooltip(day) {
+  if (day?.is_weekend) return "周末留空";
+  const tasks = day?.tasks || [];
+  if (!tasks.length) return "当天无需求单安排";
+  const summary = tasks.map((item) => `#${item.ticket_id} ${item.title}`).join("；");
+  return `当天安排 ${tasks.length} 个需求单：${summary}`;
+}
+
 function handleSideNavClick(tabKey) {
   const wasInDetail = !!ticketDetail.visible;
   if (ticketDetail.visible) {
@@ -1949,16 +2414,6 @@ function handleSideNavClick(tabKey) {
       }
     });
   }
-}
-
-function getStatusToneClass(status) {
-  const map = {
-    待处理: "quick-status-pending",
-    待验收: "quick-status-review",
-    待测试: "quick-status-doing",
-    已完成: "quick-status-done",
-  };
-  return map[status] || "quick-status-pending";
 }
 
 function getPriorityToneClass(priority) {
@@ -2496,6 +2951,161 @@ onUnmounted(() => {
   min-width: 0;
 }
 
+.report-toolbar {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.report-metric-item {
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fafcff;
+}
+
+.report-metric-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.report-metric-value {
+  margin-top: 3px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.report-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.density-section {
+  margin-top: 8px;
+}
+
+.density-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.density-filter-member {
+  width: 140px;
+}
+
+.density-timeline-wrap {
+  margin-top: 6px;
+  overflow-x: auto;
+}
+
+.density-calendar-head,
+.density-calendar-row {
+  display: grid;
+  grid-template-columns: 124px repeat(7, minmax(100px, 1fr));
+  gap: 6px;
+  min-width: 860px;
+}
+
+.density-calendar-head {
+  margin-bottom: 6px;
+}
+
+.density-week-col,
+.density-weekday-col {
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #606266;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.density-week-col {
+  justify-content: flex-start;
+  padding: 0 10px;
+}
+
+.density-calendar-row + .density-calendar-row {
+  margin-top: 6px;
+}
+
+.density-calendar-cell {
+  min-height: 76px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #fff;
+}
+
+.density-calendar-cell.weekend {
+  opacity: 0.7;
+}
+
+.density-cell-date {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.density-task-chip {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  outline: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+  color: #1f2937;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.density-task-chip:hover {
+  border-color: rgba(64, 158, 255, 0.8);
+  color: #1d4ed8;
+}
+
+.density-task-more {
+  font-size: 11px;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.density-day-empty {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: auto;
+}
+
+.density-legend {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #909399;
+}
+
 .dashboard-view-toggle-row {
   display: flex;
   justify-content: flex-end;
@@ -2835,8 +3445,8 @@ onUnmounted(() => {
 
 .ticket-detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 16px;
   margin-top: 12px;
   align-items: start;
 }
@@ -3016,23 +3626,6 @@ onUnmounted(() => {
 .ticket-quick-item :deep(.el-input__inner) {
   color: #3f4b5b;
   font-weight: 600;
-}
-
-.quick-status-pending :deep(.el-select__selected-item),
-.quick-status-pending :deep(.el-input__inner) {
-  color: #748195;
-}
-
-.quick-status-doing :deep(.el-select__selected-item),
-.quick-status-doing :deep(.el-input__inner),
-.quick-status-review :deep(.el-select__selected-item),
-.quick-status-review :deep(.el-input__inner) {
-  color: #5c8fca;
-}
-
-.quick-status-done :deep(.el-select__selected-item),
-.quick-status-done :deep(.el-input__inner) {
-  color: #5ca27a;
 }
 
 .quick-priority-low :deep(.el-select__selected-item),
@@ -3460,6 +4053,203 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+.dashboard-title-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  position: relative;
+}
+
+.dashboard-title-cell.is-child-task {
+  padding-left: 12px;
+}
+
+.dashboard-title-cell.is-child-task::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: #cbd5e1;
+}
+
+.dashboard-title-cell.is-child-task::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: #cbd5e1;
+  transform: translateY(-50%);
+}
+
+.dashboard-link-badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.dashboard-link-badge.is-parent {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.dashboard-link-badge.is-child {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.dashboard-link-badge.is-child-offset {
+  margin-left: 10px;
+}
+
+.dashboard-type-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.dashboard-type-dot.task {
+  color: #2563eb;
+  background: #dbeafe;
+}
+
+.dashboard-type-dot.bug {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.dashboard-title-main {
+  min-width: 0;
+}
+
+.dashboard-title-line {
+  color: #303133;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-ticket-id {
+  color: #909399;
+  font-weight: 600;
+  margin-right: 6px;
+  cursor: copy;
+  transition: color 0.15s ease;
+}
+
+.dashboard-ticket-id:hover {
+  color: #409eff;
+}
+
+.dashboard-task-relation {
+  margin-top: 2px;
+  color: #909399;
+  font-size: 12px;
+}
+
+.dashboard-priority-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.dashboard-priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #909399;
+}
+
+.dashboard-priority-dot.is-low {
+  background: #909399;
+}
+
+.dashboard-priority-dot.is-mid {
+  background: #409eff;
+}
+
+.dashboard-priority-dot.is-high {
+  background: #e6a23c;
+}
+
+.dashboard-priority-dot.is-urgent {
+  background: #f56c6c;
+}
+
+.dashboard-owner-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dashboard-owner-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #eef3ff;
+  color: #3154d6;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dashboard-owner-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-deadline-cell {
+  line-height: 1.2;
+}
+
+.dashboard-deadline-hint {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.dashboard-deadline-hint.normal {
+  color: #909399;
+}
+
+.dashboard-deadline-hint.soon {
+  color: #e6a23c;
+  font-weight: 600;
+}
+
+.dashboard-deadline-hint.overdue {
+  color: #f56c6c;
+  font-weight: 600;
+}
+
+.dashboard-deadline-hint.neutral {
+  color: #909399;
+}
+
 .wiki-card {
   min-height: 620px;
   padding-bottom: 8px;
@@ -3573,8 +4363,37 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.project-hub-view-toggle {
+.project-hub-view-icons {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-view-icon-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: #fff;
+  color: #606266;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.15s ease;
+}
+
+.project-view-icon-btn:hover {
+  border-color: #9ec5ff;
+  color: #409eff;
+}
+
+.project-view-icon-btn.active {
+  border-color: #409eff;
+  color: #409eff;
+  background: #ecf5ff;
 }
 
 .project-kanban {
