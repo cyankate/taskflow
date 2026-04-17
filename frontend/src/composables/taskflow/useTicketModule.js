@@ -12,6 +12,7 @@ export function useTicketModule({
   globalSearchKeyword,
   currentProjectId,
   currentVersionId,
+  activeTab,
   selectedTicketIds,
   batchEdit,
   projects,
@@ -24,6 +25,8 @@ export function useTicketModule({
   loadVersions,
   refreshAllData,
 }) {
+  let quickSaving = false;
+
   async function loadTickets() {
     const params = {};
     if (ticketFilter.project_id) params.project_id = ticketFilter.project_id;
@@ -56,7 +59,9 @@ export function useTicketModule({
     ticketDialog.form = row
       ? {
           ...row,
-          assignee_ids: row.assignees?.map((item) => item.id) || [],
+          executor_id: row.executor_id || null,
+          planner_id: row.planner_id || null,
+          tester_id: row.tester_id || null,
           parent_task_id: row.parent_task_id || null,
           related_task_id: row.related_task_id || null,
         }
@@ -66,41 +71,95 @@ export function useTicketModule({
           description: "",
           module: "",
           ticket_type: meta.ticket_types[0],
-          sub_type: "",
+          sub_type: "策划需求",
           project_id: targetProjectId,
           version_id: currentVersionId.value || versions.value[0]?.id || null,
-          status: "待处理",
           priority: "中",
-          assignee_ids: [],
+          executor_id: null,
+          planner_id: null,
+          tester_id: null,
           parent_task_id: null,
           related_task_id: null,
           start_time: "",
           end_time: "",
         };
+    if (ticketDialog.form.ticket_type === "BUG单" && !ticketDialog.form.sub_type) {
+      ticketDialog.form.sub_type = "BUG修复";
+    }
     ticketDialog.visible = true;
   }
 
   async function createQuickTicket(ticketType) {
     await openTicketDialog();
     ticketDialog.form.ticket_type = ticketType;
+    ticketDialog.form.sub_type = ticketType === "BUG单" ? "BUG修复" : "策划需求";
     ticketDialog.form.project_id = currentProjectId.value || ticketDialog.form.project_id;
     ticketDialog.form.version_id = currentVersionId.value || ticketDialog.form.version_id;
   }
 
-  async function saveTicket() {
+  function syncRoleFieldsBySubType() {
+    const form = ticketDialog.form;
+    if (form.ticket_type === "BUG单") {
+      form.sub_type = "BUG修复";
+      return;
+    }
+    if (!form.sub_type) {
+      form.sub_type = "策划需求";
+    }
+    if (form.sub_type === "策划需求") {
+      form.planner_id = form.executor_id || null;
+    } else if (form.sub_type === "测试需求") {
+      form.executor_id = form.tester_id || null;
+      form.planner_id = null;
+    }
+  }
+
+  async function saveTicket(closeAfterSave = true) {
     if (!ticketDialog.form.version_id) {
       ElMessage.warning("请选择版本");
       return;
     }
+    syncRoleFieldsBySubType();
+    if (ticketDialog.form.ticket_type === "BUG单") {
+      if (!ticketDialog.form.executor_id || !ticketDialog.form.tester_id) {
+        ElMessage.warning("BUG单必须指定修复负责人和测试负责人");
+        return;
+      }
+    } else {
+      const subType = ticketDialog.form.sub_type;
+      if (subType === "策划需求" && (!ticketDialog.form.executor_id || !ticketDialog.form.tester_id)) {
+        ElMessage.warning("策划需求必须指定执行负责人（策划）和测试负责人");
+        return;
+      }
+      if (subType === "程序需求" && (!ticketDialog.form.executor_id || !ticketDialog.form.planner_id || !ticketDialog.form.tester_id)) {
+        ElMessage.warning("程序需求必须指定程序、策划、测试负责人");
+        return;
+      }
+      if (subType === "美术需求" && (!ticketDialog.form.executor_id || !ticketDialog.form.planner_id || !ticketDialog.form.tester_id)) {
+        ElMessage.warning("美术需求必须指定美术、策划、测试负责人");
+        return;
+      }
+      if (subType === "测试需求" && !ticketDialog.form.tester_id) {
+        ElMessage.warning("测试需求必须指定测试负责人");
+        return;
+      }
+    }
     const payload = { ...ticketDialog.form };
+    const isEditing = !!payload.id;
     if (payload.id) {
       await api.put(`/tickets/${payload.id}`, payload);
     } else {
       await api.post("/tickets", payload);
     }
-    ticketDialog.visible = false;
     await refreshAllData();
-    ElMessage.success("保存成功");
+    if (!isEditing && !closeAfterSave) {
+      ticketDialog.form.title = "";
+      ticketDialog.form.description = "";
+      ElMessage.success("工单已创建，可继续新增");
+      return;
+    }
+    ticketDialog.visible = false;
+    ElMessage.success(isEditing ? "保存成功" : "工单已创建");
   }
 
   async function removeTicket(row) {
@@ -116,6 +175,15 @@ export function useTicketModule({
   }
 
   async function openTicketDetail(row) {
+    if (!ticketDetail.visible) {
+      ticketDetail.returnContext = {
+        activeTab: activeTab.value,
+        scrollY:
+          typeof window === "undefined"
+            ? 0
+            : window.scrollY || window.pageYOffset || document.documentElement?.scrollTop || 0,
+      };
+    }
     const { data } = await api.get(`/tickets/${row.id}`);
     const ticket = data.ticket || {};
     const targetProjectId = ticket.project_id || currentProjectId.value;
@@ -133,14 +201,18 @@ export function useTicketModule({
       sub_type: ticket.sub_type || "",
       project_id: ticket.project_id || currentProjectId.value || null,
       version_id: ticket.version_id || versions.value[0]?.id || null,
-      status: ticket.status || "待处理",
       priority: ticket.priority || "中",
-      assignee_ids: (ticket.assignees || []).map((item) => item.id),
+      executor_id: ticket.executor_id || null,
+      planner_id: ticket.planner_id || null,
+      tester_id: ticket.tester_id || null,
       parent_task_id: ticket.parent_task_id || null,
       related_task_id: ticket.related_task_id || null,
       start_time: toDateInputFormat(ticket.start_time),
       end_time: toDateInputFormat(ticket.end_time),
       attachments: normalizeAttachments(ticket.attachments),
+    };
+    ticketDetail.quickForm = {
+      priority: ticket.priority || "中",
     };
     ticketDetail.comments = data.comments;
     ticketDetail.commentReplies = data.comment_replies || [];
@@ -150,12 +222,36 @@ export function useTicketModule({
     ticketDetail.childTaskProgress = data.child_task_progress || { total: 0, done: 0 };
     ticketDetail.relatedBugProgress = data.related_bug_progress || { total: 0, done: 0 };
     ticketDetail.histories = data.histories;
+    ticketDetail.activityTab = "comments";
     ticketDetail.newComment = "";
+    ticketDetail.commentComposerExpanded = false;
+    ticketDetail.descriptionEditing = false;
+    ticketDetail.descriptionDraft = ticket.description || "";
     ticketDetail.commentMentionIds = [];
     ticketDetail.replyDrafts = {};
     ticketDetail.replyMentionIds = {};
+    ticketDetail.replyEditorOpen = {};
     ticketDetail.newChecklistItem = "";
     ticketDetail.visible = true;
+  }
+
+  async function saveTicketQuickEdit() {
+    if (!ticketDetail.ticket?.id) return;
+    const unchanged = ticketDetail.quickForm.priority === ticketDetail.ticket.priority;
+    if (unchanged || quickSaving) return;
+
+    quickSaving = true;
+    const payload = {
+      priority: ticketDetail.quickForm.priority,
+    };
+    try {
+      await api.put(`/tickets/${ticketDetail.ticket.id}`, payload);
+      await Promise.all([openTicketDetail({ id: ticketDetail.ticket.id }), refreshAllData()]);
+    } catch (err) {
+      ElMessage.error(getErrorMessage(err, "属性保存失败"));
+    } finally {
+      quickSaving = false;
+    }
   }
 
   async function saveTicketDetailEdit() {
@@ -168,6 +264,18 @@ export function useTicketModule({
     await api.put(`/tickets/${payload.id}`, payload);
     await Promise.all([openTicketDetail({ id: payload.id }), refreshAllData()]);
     ElMessage.success("工单更新成功");
+  }
+
+  async function runTicketFlowAction(action, reason = "") {
+    if (!ticketDetail.ticket?.id) return;
+    if (action === "submit") {
+      await api.post(`/tickets/${ticketDetail.ticket.id}/flow/submit`);
+    } else if (action === "approve") {
+      await api.post(`/tickets/${ticketDetail.ticket.id}/flow/approve`);
+    } else if (action === "reject") {
+      await api.post(`/tickets/${ticketDetail.ticket.id}/flow/reject`, { reason });
+    }
+    await Promise.all([openTicketDetail({ id: ticketDetail.ticket.id }), refreshAllData()]);
   }
 
   async function onDetailProjectChange(projectId) {
@@ -267,6 +375,15 @@ export function useTicketModule({
     await refreshAllData();
   }
 
+  async function saveTicketDescription(descriptionHtml) {
+    if (!ticketDetail.ticket?.id) return;
+    await api.put(`/tickets/${ticketDetail.ticket.id}`, {
+      description: descriptionHtml || "",
+    });
+    await Promise.all([openTicketDetail(ticketDetail.ticket), refreshAllData()]);
+    ElMessage.success("工单描述已更新");
+  }
+
   async function addCommentReply(commentId) {
     if (!ticketDetail.ticket.id || !commentId) return;
     const content = (ticketDetail.replyDrafts[commentId] || "").trim();
@@ -326,19 +443,17 @@ export function useTicketModule({
       return;
     }
     const payload = { ticket_ids: selectedTicketIds.value };
-    if (batchEdit.status) payload.status = batchEdit.status;
     if (batchEdit.priority) payload.priority = batchEdit.priority;
     if (Array.isArray(batchEdit.assignee_ids) && batchEdit.assignee_ids.length) {
       payload.assignee_ids = batchEdit.assignee_ids;
     }
-    if (!payload.status && !payload.priority && !payload.assignee_ids) {
+    if (!payload.priority && !payload.assignee_ids) {
       ElMessage.warning("请选择至少一项批量更新字段");
       return;
     }
     const { data } = await api.post("/tickets/batch-update", payload);
     ElMessage.success(`批量更新完成（${data.updated_count || 0} 条）`);
     selectedTicketIds.value = [];
-    batchEdit.status = "";
     batchEdit.priority = "";
     batchEdit.assignee_ids = [];
     await refreshAllData();
@@ -355,11 +470,14 @@ export function useTicketModule({
     handleTicketRowClick,
     openTicketDetail,
     saveTicketDetailEdit,
+    saveTicketQuickEdit,
+    runTicketFlowAction,
     onDetailProjectChange,
     onDetailAttachmentChange,
     removeDetailAttachment,
     persistTicketAttachments,
     addComment,
+    saveTicketDescription,
     addCommentReply,
     toggleTicketFollow,
     addChecklistItem,

@@ -70,6 +70,7 @@ class Ticket(db.Model):
     ticket_type = db.Column(db.String(20), nullable=False)
     sub_type = db.Column(db.String(80), default="", nullable=False)
     status = db.Column(db.String(20), default="待处理", nullable=False)
+    flow_stage = db.Column(db.String(20), default="execute", nullable=False)
     priority = db.Column(db.String(20), default="中", nullable=False)
     attachments = db.Column(db.Text, default="[]", nullable=False)
     start_time = db.Column(db.DateTime, nullable=False)
@@ -78,6 +79,11 @@ class Ticket(db.Model):
     version_id = db.Column(db.Integer, db.ForeignKey("project_version.id"), nullable=True)
     parent_task_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)
     related_task_id = db.Column(db.Integer, db.ForeignKey("ticket.id"), nullable=True)
+    current_owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    executor_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    planner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    tester_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    reject_reason = db.Column(db.String(255), default="", nullable=False)
     creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     created_at = db.Column(db.DateTime, default=now_utc, nullable=False)
     updated_at = db.Column(db.DateTime, default=now_utc, onupdate=now_utc, nullable=False)
@@ -90,6 +96,11 @@ class Ticket(db.Model):
     version = db.relationship("ProjectVersion", backref="tickets", lazy=True)
     parent_task = db.relationship("Ticket", foreign_keys=[parent_task_id], remote_side=[id], post_update=True)
     related_task = db.relationship("Ticket", foreign_keys=[related_task_id], remote_side=[id], post_update=True)
+    current_owner = db.relationship("User", foreign_keys=[current_owner_id])
+    executor = db.relationship("User", foreign_keys=[executor_id])
+    planner = db.relationship("User", foreign_keys=[planner_id])
+    tester = db.relationship("User", foreign_keys=[tester_id])
+    creator = db.relationship("User", foreign_keys=[creator_id])
 
     def to_dict(self, current_user_id: int | None = None) -> dict[str, Any]:
         watcher_ids = [user.id for user in self.watchers]
@@ -101,6 +112,7 @@ class Ticket(db.Model):
             "ticket_type": self.ticket_type,
             "sub_type": self.sub_type,
             "status": self.status,
+            "flow_stage": self.flow_stage,
             "priority": self.priority,
             "attachments": json.loads(self.attachments or "[]"),
             "start_time": self.start_time.isoformat(),
@@ -113,7 +125,17 @@ class Ticket(db.Model):
             "parent_task_title": self.parent_task.title if self.parent_task else "",
             "related_task_id": self.related_task_id,
             "related_task_title": self.related_task.title if self.related_task else "",
+            "current_owner_id": self.current_owner_id,
+            "current_owner_name": self.current_owner.display_name if self.current_owner else "",
+            "executor_id": self.executor_id,
+            "executor_name": self.executor.display_name if self.executor else "",
+            "planner_id": self.planner_id,
+            "planner_name": self.planner.display_name if self.planner else "",
+            "tester_id": self.tester_id,
+            "tester_name": self.tester.display_name if self.tester else "",
+            "reject_reason": self.reject_reason or "",
             "creator_id": self.creator_id,
+            "creator_name": self.creator.display_name if self.creator else "",
             "assignees": [user.to_dict() for user in self.assignees],
             "watchers": [user.to_dict() for user in self.watchers],
             "watcher_count": len(watcher_ids),

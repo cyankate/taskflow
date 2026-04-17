@@ -67,6 +67,7 @@ export function useTaskflowApp() {
     runBootstrap: (...args) => bootstrapRunner(...args),
   });
   const activeTab = ref("dashboard");
+  const dashboardViewMode = ref("current");
   const currentProjectId = ref(null);
   const currentVersionId = ref(null);
   const globalSearchKeyword = ref("");
@@ -97,7 +98,9 @@ export function useTaskflowApp() {
   const meta = reactive({
     positions: ["策划", "美术", "前端程序", "后端程序", "测试"],
     ticket_types: ["需求单", "BUG单"],
-    ticket_status: ["待处理", "处理中", "待验收", "已完成", "已拒绝", "已延期"],
+    demand_sub_types: ["策划需求", "程序需求", "美术需求", "测试需求"],
+    bug_sub_types: ["BUG修复"],
+    ticket_status: ["待处理", "待验收", "待测试", "已完成"],
     priorities: ["低", "中", "高", "紧急"],
   });
 
@@ -136,12 +139,13 @@ export function useTaskflowApp() {
       description: "",
       module: "",
       ticket_type: "需求单",
-      sub_type: "",
+      sub_type: "策划需求",
       project_id: null,
       version_id: null,
-      status: "待处理",
       priority: "中",
-      assignee_ids: [],
+      executor_id: null,
+      planner_id: null,
+      tester_id: null,
       parent_task_id: null,
       related_task_id: null,
       start_time: "",
@@ -152,6 +156,10 @@ export function useTaskflowApp() {
   const ticketDetail = reactive({
     visible: false,
     editing: false,
+    returnContext: {
+      activeTab: "dashboard",
+      scrollY: 0,
+    },
     ticket: {},
     editForm: {
       id: null,
@@ -159,25 +167,34 @@ export function useTaskflowApp() {
       description: "",
       module: "",
       ticket_type: "需求单",
-      sub_type: "",
+      sub_type: "策划需求",
       project_id: null,
       version_id: null,
-      status: "待处理",
       priority: "中",
-      assignee_ids: [],
+      executor_id: null,
+      planner_id: null,
+      tester_id: null,
       parent_task_id: null,
       related_task_id: null,
       start_time: "",
       end_time: "",
       attachments: [],
     },
+    quickForm: {
+      priority: "中",
+    },
     comments: [],
     commentReplies: [],
     histories: [],
+    activityTab: "comments",
     newComment: "",
+    commentComposerExpanded: false,
+    descriptionEditing: false,
+    descriptionDraft: "",
     commentMentionIds: [],
     replyDrafts: {},
     replyMentionIds: {},
+    replyEditorOpen: {},
     checklistItems: [],
     newChecklistItem: "",
     childTaskTickets: [],
@@ -187,7 +204,6 @@ export function useTaskflowApp() {
   });
   const selectedTicketIds = ref([]);
   const batchEdit = reactive({
-    status: "",
     priority: "",
     assignee_ids: [],
   });
@@ -260,6 +276,7 @@ export function useTaskflowApp() {
     pagedWikiArticles,
   } = usePaginationState({
     dashboard,
+    dashboardViewMode,
     tickets,
     projectHub,
     wikiArticles,
@@ -325,11 +342,14 @@ export function useTaskflowApp() {
     handleTicketRowClick,
     openTicketDetail,
     saveTicketDetailEdit,
+    saveTicketQuickEdit,
+    runTicketFlowAction,
     onDetailProjectChange,
     onDetailAttachmentChange,
     removeDetailAttachment,
     persistTicketAttachments,
     addComment,
+    saveTicketDescription,
     toggleTicketFollow,
     addCommentReply,
     addChecklistItem,
@@ -350,6 +370,8 @@ export function useTaskflowApp() {
     globalSearchKeyword,
     currentProjectId,
     currentVersionId,
+    activeTab,
+    dashboardViewMode,
     selectedTicketIds,
     batchEdit,
     projects,
@@ -434,6 +456,21 @@ export function useTaskflowApp() {
     }
   }
 
+  function closeTicketDetail() {
+    const fallbackTab = ticketDetail.returnContext?.activeTab || "dashboard";
+    const fallbackScrollY = Number(ticketDetail.returnContext?.scrollY || 0);
+    ticketDetail.visible = false;
+    ticketDetail.editing = false;
+    if (activeTab.value !== fallbackTab) {
+      activeTab.value = fallbackTab;
+    }
+    nextTick(() => {
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: Math.max(0, fallbackScrollY), behavior: "auto" });
+      }
+    });
+  }
+
   async function onNotificationFeedPageChange(page) {
     await loadNotificationFeed(page);
   }
@@ -474,6 +511,34 @@ export function useTaskflowApp() {
     return all.filter((item) => item.comment_id === commentId);
   }
 
+  function isReplyEditorOpen(commentId) {
+    return !!ticketDetail.replyEditorOpen?.[commentId];
+  }
+
+  function toggleReplyEditor(commentId) {
+    if (!commentId) return;
+    ticketDetail.replyEditorOpen = {
+      ...(ticketDetail.replyEditorOpen || {}),
+      [commentId]: !ticketDetail.replyEditorOpen?.[commentId],
+    };
+  }
+
+  function expandCommentComposer() {
+    ticketDetail.commentComposerExpanded = true;
+  }
+
+  function maybeCollapseCommentComposer() {
+    setTimeout(() => {
+      if (typeof document !== "undefined") {
+        const active = document.activeElement;
+        if (active?.closest?.(".ticket-comment-composer")) return;
+      }
+      if (!(ticketDetail.newComment || "").trim()) {
+        ticketDetail.commentComposerExpanded = false;
+      }
+    }, 0);
+  }
+
   function onProjectHubSelectionChange(rows) {
     selectedTicketIds.value = (rows || []).map((row) => row.id);
   }
@@ -503,6 +568,11 @@ export function useTaskflowApp() {
   }
 
   async function runTopbarSearch() {
+    if (ticketDetail.visible) {
+      ticketDetail.visible = false;
+      ticketDetail.editing = false;
+      ticketDetail.descriptionEditing = false;
+    }
     ticketFilter.project_id = currentProjectId.value;
     ticketFilter.version_id = currentVersionId.value;
     await runGlobalSearch();
@@ -514,6 +584,11 @@ export function useTaskflowApp() {
   }
 
   async function clearTopbarSearch() {
+    if (ticketDetail.visible) {
+      ticketDetail.visible = false;
+      ticketDetail.editing = false;
+      ticketDetail.descriptionEditing = false;
+    }
     globalSearchKeyword.value = "";
     searchResultTip.value = "";
     ticketFilter.project_id = currentProjectId.value;
@@ -754,6 +829,7 @@ export function useTaskflowApp() {
     markNotificationRead,
     markAllNotificationsRead,
     openNotificationCenter,
+    closeTicketDetail,
     onNotificationItemClick,
     onNotificationFeedPageChange,
     loadWikiCategories,
@@ -786,11 +862,14 @@ export function useTaskflowApp() {
     handleTicketRowClick,
     openTicketDetail,
     saveTicketDetailEdit,
+    saveTicketQuickEdit,
+    runTicketFlowAction,
     onDetailProjectChange,
     onDetailAttachmentChange,
     removeDetailAttachment,
     persistTicketAttachments,
     addComment,
+    saveTicketDescription,
     toggleTicketFollow,
     addCommentReply,
     addChecklistItem,
@@ -803,6 +882,10 @@ export function useTaskflowApp() {
     onCommentMentionIdsChange,
     onReplyMentionIdsChange,
     getCommentReplies,
+    isReplyEditorOpen,
+    toggleReplyEditor,
+    expandCommentComposer,
+    maybeCollapseCommentComposer,
     commentContentWithMentionsHtml,
     mentionDisplayNames,
     refreshAllData,

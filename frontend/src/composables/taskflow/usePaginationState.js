@@ -1,12 +1,16 @@
 import { computed, ref, watch } from "vue";
 
-export function usePaginationState({ dashboard, tickets, projectHub, wikiArticles }) {
+export function usePaginationState({ dashboard, dashboardViewMode, tickets, projectHub, wikiArticles }) {
   const dashboardTaskPage = ref(1);
   const dashboardTaskPageSize = 8;
   const dashboardBugPage = ref(1);
   const dashboardBugPageSize = 12;
-  const dashboardTasks = computed(() => dashboard.my_pending_tasks || []);
-  const dashboardBugs = computed(() => dashboard.my_pending_bugs || []);
+  const dashboardTasks = computed(() =>
+    dashboardViewMode.value === "created" ? dashboard.my_created_tasks || [] : dashboard.my_current_tasks || [],
+  );
+  const dashboardBugs = computed(() =>
+    dashboardViewMode.value === "created" ? dashboard.my_created_bugs || [] : dashboard.my_current_bugs || [],
+  );
 
   const pagedDashboardTasks = computed(() => {
     const start = (dashboardTaskPage.value - 1) * dashboardTaskPageSize;

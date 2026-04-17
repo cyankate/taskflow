@@ -11,7 +11,7 @@ from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import and_, func, or_
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from taskflow.constants import POSITIONS, PRIORITIES, TICKET_STATUS, TICKET_TYPES
+from taskflow.constants import BUG_SUB_TYPES, DEMAND_SUB_TYPES, POSITIONS, PRIORITIES, TICKET_STATUS, TICKET_TYPES
 from taskflow.extensions import db
 from taskflow.models import (
     Comment,
@@ -28,7 +28,14 @@ from taskflow.models import (
     ticket_assignees,
 )
 from taskflow.services.auth_service import auth_required, generate_token
-from taskflow.services.ticket_service import create_history, validate_ticket_payload
+from taskflow.services.ticket_service import (
+    apply_flow_action,
+    create_history,
+    get_available_flow_actions,
+    normalize_role_ids,
+    resolve_initial_flow,
+    validate_ticket_payload,
+)
 from taskflow.utils.datetime_utils import now_utc, parse_iso
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -146,6 +153,40 @@ def _resolve_ticket_links(
             return None, None, "关联任务单不能是自己"
 
     return parent_task_id, related_task_id, None
+
+
+def _validate_flow_role_users(ticket_type: str, sub_type: str, role_ids: dict[str, int | None]) -> str | None:
+    executor_id = role_ids.get("executor_id")
+    planner_id = role_ids.get("planner_id")
+    tester_id = role_ids.get("tester_id")
+
+    role_user_ids = [uid for uid in {executor_id, planner_id, tester_id} if uid]
+    users_by_id = {user.id: user for user in User.query.filter(User.id.in_(role_user_ids)).all()} if role_user_ids else {}
+    if executor_id and executor_id not in users_by_id:
+        return "执行负责人不存在"
+    if planner_id and planner_id not in users_by_id:
+        return "策划负责人不存在"
+    if tester_id and tester_id not in users_by_id:
+        return "测试负责人不存在"
+
+    planner_user = users_by_id.get(planner_id) if planner_id else None
+    tester_user = users_by_id.get(tester_id) if tester_id else None
+    executor_user = users_by_id.get(executor_id) if executor_id else None
+
+    if planner_user and planner_user.position != "策划":
+        return "策划负责人必须是策划岗位"
+    if tester_user and tester_user.position != "测试":
+        return "测试负责人必须是测试岗位"
+    if ticket_type == "需求单" and sub_type == "程序需求":
+        if executor_user and executor_user.position not in {"前端程序", "后端程序"}:
+            return "程序需求的执行负责人必须是程序岗位"
+    if ticket_type == "需求单" and sub_type == "美术需求":
+        if executor_user and executor_user.position != "美术":
+            return "美术需求的执行负责人必须是美术岗位"
+    if ticket_type == "需求单" and sub_type == "策划需求":
+        if executor_user and executor_user.position != "策划":
+            return "策划需求的执行负责人必须是策划岗位"
+    return None
 
 
 def _resolve_wiki_category(category_name: str | None) -> WikiCategory | None:
@@ -374,6 +415,8 @@ def meta() -> Any:
         {
             "positions": POSITIONS,
             "ticket_types": TICKET_TYPES,
+            "demand_sub_types": DEMAND_SUB_TYPES,
+            "bug_sub_types": BUG_SUB_TYPES,
             "ticket_status": TICKET_STATUS,
             "priorities": PRIORITIES,
         }
@@ -580,7 +623,7 @@ def project_hub() -> Any:
                 **project.to_dict(),
                 "total_tickets": len(project_tickets),
                 "pending_tickets": len(
-                    [ticket for ticket in project_tickets if ticket.status in {"待处理", "处理中", "待验收"}]
+                    [ticket for ticket in project_tickets if ticket.status in {"待处理", "待验收", "待测试"}]
                 ),
                 "completed_tickets": len([ticket for ticket in project_tickets if ticket.status == "已完成"]),
                 "bug_tickets": len([ticket for ticket in project_tickets if ticket.ticket_type == "BUG单"]),
@@ -629,7 +672,7 @@ def project_hub() -> Any:
             "summary": {
                 "total_tickets": len(selected_tickets),
                 "pending_tickets": len(
-                    [ticket for ticket in selected_tickets if ticket.status in {"待处理", "处理中", "待验收"}]
+                    [ticket for ticket in selected_tickets if ticket.status in {"待处理", "待验收", "待测试"}]
                 ),
                 "completed_tickets": len([ticket for ticket in selected_tickets if ticket.status == "已完成"]),
                 "bug_tickets": len([ticket for ticket in selected_tickets if ticket.ticket_type == "BUG单"]),
@@ -693,8 +736,18 @@ def list_tickets() -> Any:
             )
         )
 
+    view_mode = (request.args.get("view_mode") or "").strip()
+    if view_mode == "current":
+        query = query.filter(Ticket.current_owner_id == request.current_user.id)
+    elif view_mode == "created":
+        query = query.filter(Ticket.creator_id == request.current_user.id)
     tickets = query.order_by(Ticket.updated_at.desc()).all()
-    return jsonify([ticket.to_dict(current_user_id=request.current_user.id) for ticket in tickets])
+    result = []
+    for ticket in tickets:
+        item = ticket.to_dict(current_user_id=request.current_user.id)
+        item["available_actions"] = get_available_flow_actions(ticket, request.current_user.id)
+        result.append(item)
+    return jsonify(result)
 
 
 @api_bp.post("/tickets")
@@ -704,6 +757,13 @@ def create_ticket() -> Any:
     valid, message = validate_ticket_payload(payload)
     if not valid:
         return jsonify({"message": message}), 400
+
+    start_time_raw = payload.get("start_time")
+    end_time_raw = payload.get("end_time")
+    start_time = parse_iso(start_time_raw) if start_time_raw not in (None, "") else now_utc()
+    end_time = parse_iso(end_time_raw) if end_time_raw not in (None, "") else start_time + timedelta(days=7)
+    if end_time < start_time:
+        return jsonify({"message": "结束时间不能早于开始时间"}), 400
 
     project = db.session.get(Project, int(payload["project_id"]))
     if not project:
@@ -736,34 +796,46 @@ def create_ticket() -> Any:
     if not is_valid_attachment:
         return jsonify({"message": attachment_message}), 400
 
+    role_ids = normalize_role_ids(payload)
+    role_error = _validate_flow_role_users(payload["ticket_type"], payload.get("sub_type", ""), role_ids)
+    if role_error:
+        return jsonify({"message": role_error}), 400
+    initial_flow = resolve_initial_flow(payload["ticket_type"], payload.get("sub_type", ""), role_ids)
+    if not initial_flow.get("current_owner_id"):
+        return jsonify({"message": "流转负责人配置不完整"}), 400
+
     ticket = Ticket(
         title=payload["title"].strip(),
         description=payload.get("description", "").strip(),
         module=payload["module"].strip(),
         ticket_type=payload["ticket_type"],
         sub_type=payload.get("sub_type", "").strip(),
-        status=payload["status"],
+        status=initial_flow["status"],
+        flow_stage=initial_flow["flow_stage"],
         priority=payload["priority"],
         attachments=json.dumps(attachments, ensure_ascii=False),
-        start_time=parse_iso(payload["start_time"]),
-        end_time=parse_iso(payload["end_time"]),
+        start_time=start_time,
+        end_time=end_time,
         project_id=project.id,
         version_id=version.id,
         parent_task_id=parent_task_id,
         related_task_id=related_task_id,
+        current_owner_id=initial_flow["current_owner_id"],
+        executor_id=role_ids.get("executor_id"),
+        planner_id=role_ids.get("planner_id"),
+        tester_id=role_ids.get("tester_id"),
         creator_id=request.current_user.id,
     )
-    assignee_ids = payload.get("assignee_ids", [])
-    if assignee_ids:
-        ticket.assignees = User.query.filter(User.id.in_(assignee_ids)).all()
+    role_user_ids = [uid for uid in {role_ids.get("executor_id"), role_ids.get("planner_id"), role_ids.get("tester_id")} if uid]
+    if role_user_ids:
+        ticket.assignees = User.query.filter(User.id.in_(role_user_ids)).all()
     else:
-        # Fallback: ensure creator can see newly created tickets in "我的工作台".
         ticket.assignees = [request.current_user]
     ticket.watchers = list({user.id: user for user in [request.current_user, *ticket.assignees]}.values())
 
     db.session.add(ticket)
     db.session.flush()
-    create_history(ticket, request.current_user.id, "创建工单")
+    create_history(ticket, request.current_user.id, f"创建工单，当前处理人：{ticket.current_owner.display_name if ticket.current_owner else '-'}")
     for assignee in ticket.assignees:
         if assignee.id != request.current_user.id:
             _push_user_notification(
@@ -789,22 +861,44 @@ def update_ticket(ticket_id: int) -> Any:
         passed, limited_response = _enforce_rate_limit("ticket_upload", RATE_LIMIT_UPLOAD_COUNT)
         if not passed:
             return limited_response
+    fallback_sub_type = ticket.sub_type
+    if not fallback_sub_type:
+        fallback_sub_type = "BUG修复" if ticket.ticket_type == "BUG单" else "程序需求"
     merged_payload = {
         "title": payload.get("title", ticket.title),
         "module": payload.get("module", ticket.module),
         "ticket_type": payload.get("ticket_type", ticket.ticket_type),
-        "status": payload.get("status", ticket.status),
+        "sub_type": payload.get("sub_type", fallback_sub_type),
         "priority": payload.get("priority", ticket.priority),
         "project_id": payload.get("project_id", ticket.project_id),
         "version_id": payload.get("version_id", ticket.version_id),
         "parent_task_id": payload.get("parent_task_id", ticket.parent_task_id),
         "related_task_id": payload.get("related_task_id", ticket.related_task_id),
-        "start_time": payload.get("start_time", ticket.start_time.isoformat()),
-        "end_time": payload.get("end_time", ticket.end_time.isoformat()),
+        "executor_id": payload.get("executor_id", ticket.executor_id),
+        "planner_id": payload.get("planner_id", ticket.planner_id),
+        "tester_id": payload.get("tester_id", ticket.tester_id),
+        "start_time": (
+            payload.get("start_time")
+            if payload.get("start_time") not in (None, "")
+            else ticket.start_time.isoformat()
+        ),
+        "end_time": (
+            payload.get("end_time")
+            if payload.get("end_time") not in (None, "")
+            else ticket.end_time.isoformat()
+        ),
     }
     valid, message = validate_ticket_payload(merged_payload)
     if not valid:
         return jsonify({"message": message}), 400
+    merged_role_ids = normalize_role_ids(merged_payload)
+    role_error = _validate_flow_role_users(merged_payload["ticket_type"], merged_payload.get("sub_type", ""), merged_role_ids)
+    if role_error:
+        return jsonify({"message": role_error}), 400
+    merged_start_time = parse_iso(merged_payload["start_time"])
+    merged_end_time = parse_iso(merged_payload["end_time"])
+    if merged_end_time < merged_start_time:
+        return jsonify({"message": "结束时间不能早于开始时间"}), 400
     merged_project_id = int(merged_payload["project_id"])
     merged_version_id = int(merged_payload["version_id"])
     merged_version = db.session.get(ProjectVersion, merged_version_id)
@@ -833,13 +927,12 @@ def update_ticket(ticket_id: int) -> Any:
         "module": "模块",
         "ticket_type": "类型",
         "sub_type": "子类型",
-        "status": "状态",
         "priority": "优先级",
         "parent_task_id": "父任务",
         "related_task_id": "关联任务单",
     }
     changes: list[str] = []
-    for field in ["title", "description", "module", "ticket_type", "sub_type", "status", "priority"]:
+    for field in ["title", "description", "module", "ticket_type", "sub_type", "priority"]:
         if field in payload:
             old_value = getattr(ticket, field)
             new_value = payload[field]
@@ -865,35 +958,41 @@ def update_ticket(ticket_id: int) -> Any:
         new_label = new_ticket.title if new_ticket else "无"
         ticket.related_task_id = resolved_related_task_id
         changes.append(f"关联任务单: {old_label} -> {new_label}")
-    if "start_time" in payload:
+    if "start_time" in payload and payload["start_time"] not in (None, ""):
         ticket.start_time = parse_iso(payload["start_time"])
-    if "end_time" in payload:
+    if "end_time" in payload and payload["end_time"] not in (None, ""):
         ticket.end_time = parse_iso(payload["end_time"])
     if "attachments" in payload:
         is_valid_attachment, attachment_message = _validate_attachments_payload(payload["attachments"], allow_documents=False)
         if not is_valid_attachment:
             return jsonify({"message": attachment_message}), 400
         ticket.attachments = json.dumps(payload["attachments"], ensure_ascii=False)
-    if "assignee_ids" in payload:
-        old_assignee_ids = {u.id for u in ticket.assignees}
-        old_names = "、".join([user.display_name for user in ticket.assignees]) or "无"
-        ticket.assignees = User.query.filter(User.id.in_(payload["assignee_ids"])).all()
+    role_changed = any(field in payload for field in ["executor_id", "planner_id", "tester_id", "ticket_type", "sub_type"])
+    if role_changed:
+        old_owner_id = ticket.current_owner_id
+        ticket.executor_id = merged_role_ids.get("executor_id")
+        ticket.planner_id = merged_role_ids.get("planner_id")
+        ticket.tester_id = merged_role_ids.get("tester_id")
+        if ticket.flow_stage == "execute":
+            if ticket.ticket_type == "需求单" and ticket.sub_type == "策划需求":
+                ticket.current_owner_id = ticket.planner_id
+            elif ticket.ticket_type == "需求单" and ticket.sub_type == "测试需求":
+                ticket.current_owner_id = ticket.tester_id
+            else:
+                ticket.current_owner_id = ticket.executor_id
+        elif ticket.flow_stage == "accept":
+            ticket.current_owner_id = ticket.planner_id
+        elif ticket.flow_stage == "test":
+            ticket.current_owner_id = ticket.tester_id
+        role_user_ids = [uid for uid in {ticket.executor_id, ticket.planner_id, ticket.tester_id} if uid]
+        ticket.assignees = User.query.filter(User.id.in_(role_user_ids)).all() if role_user_ids else []
         for assignee in ticket.assignees:
             if assignee.id not in {u.id for u in ticket.watchers}:
                 ticket.watchers.append(assignee)
-        new_assignee_ids = {u.id for u in ticket.assignees}
-        new_names = "、".join([user.display_name for user in ticket.assignees]) or "无"
-        if old_names != new_names:
-            changes.append(f"负责人: {old_names} -> {new_names}")
-        for uid in new_assignee_ids - old_assignee_ids:
-            if uid != request.current_user.id:
-                _push_user_notification(
-                    uid,
-                    "assign",
-                    "你被指派为工单负责人",
-                    ticket.title[:200],
-                    ticket.id,
-                )
+        if old_owner_id != ticket.current_owner_id:
+            old_name = (db.session.get(User, old_owner_id).display_name if old_owner_id else "无")
+            new_name = (db.session.get(User, ticket.current_owner_id).display_name if ticket.current_owner_id else "无")
+            changes.append(f"当前处理人: {old_name} -> {new_name}")
 
     if changes:
         create_history(ticket, request.current_user.id, "；".join(changes)[:255])
@@ -923,7 +1022,7 @@ def batch_update_tickets() -> Any:
     if not tickets:
         return jsonify({"message": "未找到可更新工单"}), 404
 
-    has_change = any(field in payload for field in ["status", "priority", "assignee_ids"])
+    has_change = any(field in payload for field in ["priority", "assignee_ids"])
     if not has_change:
         return jsonify({"message": "请至少提供一项批量更新字段"}), 400
 
@@ -935,9 +1034,6 @@ def batch_update_tickets() -> Any:
     updated: list[dict[str, Any]] = []
     for ticket in tickets:
         change_parts: list[str] = []
-        if "status" in payload and payload["status"] and ticket.status != payload["status"]:
-            change_parts.append(f"状态: {ticket.status} -> {payload['status']}")
-            ticket.status = payload["status"]
         if "priority" in payload and payload["priority"] and ticket.priority != payload["priority"]:
             change_parts.append(f"优先级: {ticket.priority} -> {payload['priority']}")
             ticket.priority = payload["priority"]
@@ -988,7 +1084,10 @@ def get_ticket_detail(ticket_id: int) -> Any:
 
     return jsonify(
         {
-            "ticket": ticket.to_dict(current_user_id=request.current_user.id),
+            "ticket": {
+                **ticket.to_dict(current_user_id=request.current_user.id),
+                "available_actions": get_available_flow_actions(ticket, request.current_user.id),
+            },
             "histories": [item.to_dict() for item in sorted(ticket.histories, key=lambda row: row.created_at, reverse=True)],
             "comments": [item.to_dict() for item in sorted(ticket.comments, key=lambda row: row.created_at, reverse=True)],
             "comment_replies": [
@@ -1011,6 +1110,59 @@ def get_ticket_detail(ticket_id: int) -> Any:
                 "total": len(related_bug_tickets),
                 "done": len([item for item in related_bug_tickets if item.status == "已完成"]),
             },
+        }
+    )
+
+
+@api_bp.post("/tickets/<int:ticket_id>/flow/submit")
+@auth_required()
+def submit_ticket_flow(ticket_id: int) -> Any:
+    return _handle_ticket_flow_action(ticket_id, "submit")
+
+
+@api_bp.post("/tickets/<int:ticket_id>/flow/approve")
+@auth_required()
+def approve_ticket_flow(ticket_id: int) -> Any:
+    return _handle_ticket_flow_action(ticket_id, "approve")
+
+
+@api_bp.post("/tickets/<int:ticket_id>/flow/reject")
+@auth_required()
+def reject_ticket_flow(ticket_id: int) -> Any:
+    payload = request.get_json(silent=True) or {}
+    return _handle_ticket_flow_action(ticket_id, "reject", payload.get("reason", ""))
+
+
+def _handle_ticket_flow_action(ticket_id: int, action: str, reject_reason: str = "") -> Any:
+    ticket = db.session.get(Ticket, ticket_id)
+    if not ticket:
+        return jsonify({"message": "工单不存在"}), 404
+    if ticket.current_owner_id != request.current_user.id:
+        return jsonify({"message": "当前工单不在你的处理节点"}), 403
+    ok, message = apply_flow_action(ticket, action, reject_reason=reject_reason)
+    if not ok:
+        return jsonify({"message": message}), 400
+    action_text = {"submit": "提交", "approve": "通过", "reject": "驳回"}.get(action, action)
+    summary = f"{action_text}工单，状态变更为{ticket.status}"
+    if action == "reject" and ticket.reject_reason:
+        summary += f"（原因：{ticket.reject_reason}）"
+    create_history(ticket, request.current_user.id, summary[:255])
+    if ticket.current_owner_id and ticket.current_owner_id != request.current_user.id:
+        _push_user_notification(
+            ticket.current_owner_id,
+            "flow",
+            "你有新的工单待处理",
+            f"#{ticket.id} {ticket.title[:120]}",
+            ticket.id,
+        )
+    _notify_ticket_watchers(ticket, request.current_user.id, "flow", "你关注的工单发生流转", summary[:180])
+    db.session.commit()
+    return jsonify(
+        {
+            "ticket": {
+                **ticket.to_dict(current_user_id=request.current_user.id),
+                "available_actions": get_available_flow_actions(ticket, request.current_user.id),
+            }
         }
     )
 
@@ -1303,7 +1455,7 @@ def dashboard() -> Any:
     project_id = request.args.get("project_id", type=int)
     version_id = request.args.get("version_id", type=int)
     now = _to_utc_naive(now_utc())
-    my_tickets_query = Ticket.query.join(ticket_assignees).filter(ticket_assignees.c.user_id == user.id)
+    my_tickets_query = Ticket.query.filter(or_(Ticket.current_owner_id == user.id, Ticket.creator_id == user.id))
     all_tickets_query = Ticket.query
     if project_id:
         my_tickets_query = my_tickets_query.filter(Ticket.project_id == project_id)
@@ -1312,10 +1464,14 @@ def dashboard() -> Any:
         my_tickets_query = my_tickets_query.filter(Ticket.version_id == version_id)
         all_tickets_query = all_tickets_query.filter(Ticket.version_id == version_id)
     my_tickets = my_tickets_query.order_by(Ticket.end_time.asc()).all()
-    pending_status = {"待处理", "处理中", "待验收"}
-    my_pending = [ticket.to_dict() for ticket in my_tickets if ticket.status in pending_status]
-    my_pending_tasks = [ticket for ticket in my_pending if ticket.get("ticket_type") == "需求单"]
-    my_pending_bugs = [ticket for ticket in my_pending if ticket.get("ticket_type") == "BUG单"]
+    pending_status = {"待处理", "待验收", "待测试"}
+    my_current = [ticket.to_dict() for ticket in my_tickets if ticket.current_owner_id == user.id and ticket.status in pending_status]
+    my_created = [ticket.to_dict() for ticket in my_tickets if ticket.creator_id == user.id and ticket.status in pending_status]
+    my_pending = my_current
+    my_pending_tasks = [ticket for ticket in my_current if ticket.get("ticket_type") == "需求单"]
+    my_pending_bugs = [ticket for ticket in my_current if ticket.get("ticket_type") == "BUG单"]
+    my_created_tasks = [ticket for ticket in my_created if ticket.get("ticket_type") == "需求单"]
+    my_created_bugs = [ticket for ticket in my_created if ticket.get("ticket_type") == "BUG单"]
     my_overdue = [
         ticket.to_dict()
         for ticket in my_tickets
@@ -1324,6 +1480,8 @@ def dashboard() -> Any:
 
     by_status = {status: 0 for status in TICKET_STATUS}
     for row in all_tickets_query.all():
+        if row.status not in by_status:
+            by_status[row.status] = 0
         by_status[row.status] += 1
 
     my_ticket_ids = [ticket.id for ticket in my_tickets]
@@ -1351,12 +1509,20 @@ def dashboard() -> Any:
 
     return jsonify(
         {
+            "my_current": my_current,
+            "my_current_tasks": my_pending_tasks,
+            "my_current_bugs": my_pending_bugs,
+            "my_created": my_created,
+            "my_created_tasks": my_created_tasks,
+            "my_created_bugs": my_created_bugs,
             "my_pending": my_pending,
             "my_pending_tasks": my_pending_tasks,
             "my_pending_bugs": my_pending_bugs,
             "my_overdue": my_overdue,
             "current_task_count": len(my_pending_tasks),
             "current_bug_count": len(my_pending_bugs),
+            "created_task_count": len(my_created_tasks),
+            "created_bug_count": len(my_created_bugs),
             "ticket_count": all_tickets_query.count(),
             "by_status": by_status,
             "my_dynamics": my_dynamics,
@@ -1379,7 +1545,7 @@ def statistics() -> Any:
         [
             ticket
             for ticket in all_tickets
-            if ticket.status in {"待处理", "处理中", "待验收"} and _to_utc_naive(ticket.end_time) < now
+            if ticket.status in {"待处理", "待验收", "待测试"} and _to_utc_naive(ticket.end_time) < now
         ]
     )
 
@@ -1413,7 +1579,7 @@ def notifications() -> Any:
     project_id = request.args.get("project_id", type=int)
     now = _to_utc_naive(now_utc())
     soon = now + timedelta(days=2)
-    tickets_query = Ticket.query.join(ticket_assignees).filter(ticket_assignees.c.user_id == user.id)
+    tickets_query = Ticket.query.filter(or_(Ticket.current_owner_id == user.id, Ticket.creator_id == user.id))
     if project_id:
         tickets_query = tickets_query.filter(Ticket.project_id == project_id)
     tickets = tickets_query.all()
@@ -1422,12 +1588,12 @@ def notifications() -> Any:
     overdue_items = [
         ticket
         for ticket in tickets
-        if ticket.status in {"待处理", "处理中", "待验收"} and _to_utc_naive(ticket.end_time) < now
+        if ticket.status in {"待处理", "待验收", "待测试"} and _to_utc_naive(ticket.end_time) < now
     ]
     soon_due_items = [
         ticket
         for ticket in tickets
-        if ticket.status in {"待处理", "处理中", "待验收"} and now <= _to_utc_naive(ticket.end_time) <= soon
+        if ticket.status in {"待处理", "待验收", "待测试"} and now <= _to_utc_naive(ticket.end_time) <= soon
     ]
 
     unread_notification_count = (
