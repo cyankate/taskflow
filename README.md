@@ -188,6 +188,7 @@ npm run dev
 前端默认运行在：`http://127.0.0.1:5173`
 
 前端已配置代理，访问 `/api/*` 会自动转发到后端。
+当通过环境变量修改后端端口时（例如 `FLASK_PORT=5001`），前端开发代理会自动跟随该端口。
 
 ## 八、安全与备份（轻量方案）
 
@@ -215,6 +216,7 @@ cp .env.example .env.production
 
 - `linux_service.sh` 会在启动时自动加载 `.env.production`
 - 可通过 `ENV_FILE=/path/to/your.env ./linux_service.sh start` 指定其他文件
+- 当修改依赖后可执行 `./linux_service.sh update-deps` 同步 Python/NPM 依赖
 
 ### 2) 一键备份脚本（Linux）
 
@@ -232,3 +234,57 @@ chmod +x linux_backup.sh
 - 备份附件目录（若存在）：`backend/instance/uploads/`
 - 输出压缩包到：`backups/taskflow_backup_时间戳.tar.gz`
 - 默认保留策略：`14` 天且最多 `20` 个备份包
+
+## 九、Linux 生产部署（构建产物 + systemd + nginx）
+
+仓库根目录提供：`linux_prod_setup.sh`
+
+功能：
+
+- 安装后端依赖（含 `gunicorn`）
+- 构建前端产物（`frontend/dist`）
+- 生成并安装 systemd 服务：`/etc/systemd/system/taskflow-backend.service`
+- 生成并安装 nginx 站点配置并重启服务
+
+示例：
+
+```bash
+chmod +x linux_prod_setup.sh
+cp .env.example .env.production
+
+# 按需设置域名/端口/用户后执行
+SERVER_NAME=example.com BACKEND_PORT=5000 APP_USER=taskflow ./linux_prod_setup.sh setup
+```
+
+如需自动安装系统依赖（python3/nodejs/nginx），可增加：
+
+```bash
+AUTO_INSTALL_DEPS=1 ./linux_prod_setup.sh setup
+```
+
+常用命令：
+
+- `./linux_prod_setup.sh setup`：全量部署
+- `./linux_prod_setup.sh build`：仅安装依赖+构建
+- `./linux_prod_setup.sh render`：仅渲染 systemd/nginx 配置
+- `./linux_prod_setup.sh reload`：仅重载 systemd/nginx
+- `./linux_prod_setup.sh status`：查看服务状态
+
+### 生产环境日常更新脚本
+
+仓库根目录提供：`linux_prod_update.sh`
+
+示例：
+
+```bash
+chmod +x linux_prod_update.sh
+./linux_prod_update.sh update
+```
+
+常用命令：
+
+- `./linux_prod_update.sh update`：同步依赖 + 前端构建 + 重启后端 + reload nginx
+- `./linux_prod_update.sh deps`：仅同步依赖
+- `./linux_prod_update.sh build`：仅前端构建
+- `./linux_prod_update.sh reload`：仅重启后端并 reload nginx
+- `./linux_prod_update.sh status`：查看服务状态

@@ -55,9 +55,6 @@ ensure_backend_env() {
   if [[ ! -d "$BACKEND_DIR/.venv" ]]; then
     echo "[backend] creating virtualenv..."
     "$PYTHON_BIN" -m venv "$BACKEND_DIR/.venv"
-    source "$BACKEND_DIR/.venv/bin/activate"
-    pip install -r "$BACKEND_DIR/requirements.txt"
-    deactivate
   fi
 }
 
@@ -66,6 +63,28 @@ ensure_frontend_env() {
     echo "[frontend] installing npm dependencies..."
     (cd "$FRONTEND_DIR" && "$NPM_BIN" install)
   fi
+}
+
+update_backend_deps() {
+  ensure_backend_env
+  echo "[backend] syncing python dependencies..."
+  source "$BACKEND_DIR/.venv/bin/activate"
+  pip install -r "$BACKEND_DIR/requirements.txt"
+  deactivate
+}
+
+update_frontend_deps() {
+  echo "[frontend] syncing npm dependencies..."
+  if [[ -f "$FRONTEND_DIR/package-lock.json" ]]; then
+    (cd "$FRONTEND_DIR" && "$NPM_BIN" ci)
+  else
+    (cd "$FRONTEND_DIR" && "$NPM_BIN" install)
+  fi
+}
+
+update_deps() {
+  update_backend_deps
+  update_frontend_deps
 }
 
 start_backend() {
@@ -151,11 +170,12 @@ usage() {
 Usage: ./linux_service.sh <command>
 
 Commands:
-  start      Start backend + frontend
-  stop       Stop backend + frontend
-  restart    Restart backend + frontend
-  status     Show backend + frontend status
-  logs       Show latest backend + frontend logs
+  start       Start backend + frontend
+  stop        Stop backend + frontend
+  restart     Restart backend + frontend
+  update-deps Sync backend/frontend dependencies
+  status      Show backend + frontend status
+  logs        Show latest backend + frontend logs
 
 Notes:
   - Backend listens on 0.0.0.0:5000 (configured in backend/app.py)
@@ -180,6 +200,9 @@ main() {
       "$0" stop
       "$0" start
       ;;
+    update-deps)
+      update_deps
+      ;;
     status)
       status_service "backend" "$BACKEND_PID_FILE"
       status_service "frontend" "$FRONTEND_PID_FILE"
@@ -195,4 +218,3 @@ main() {
 }
 
 main "$@"
-
