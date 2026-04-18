@@ -1072,6 +1072,7 @@
               <input
                 ref="hotReloadFileInputRef"
                 type="file"
+                multiple
                 class="console-hotreload-file-input-hidden"
                 @change="onHotReloadLocalFileChange"
               />
@@ -1141,13 +1142,13 @@
                           type="success"
                           plain
                           :loading="hotReload.uploadLoading"
-                          :disabled="!hotReload.pickedFileName || !selectedGatewayId"
+                          :disabled="!hotReload.localFiles.length || !selectedGatewayId"
                           @click="uploadHotReloadLocalToSkynet"
                         >
-                          上传到服务器
+                          上传到服务器（{{ hotReload.localFiles.length }}）
                         </el-button>
                         <el-button
-                          v-if="hotReload.pickedFileName"
+                          v-if="hotReload.localFiles.length"
                           size="small"
                           text
                           type="danger"
@@ -1157,9 +1158,57 @@
                         </el-button>
                       </span>
                     </div>
-                    <p v-if="hotReload.pickedFileName" class="console-hotreload-picked-name">
-                      已选：{{ hotReload.pickedFileName }}
+                    <p v-if="hotReload.localFiles.length" class="console-hotreload-picked-name">
+                      已选 {{ hotReloadLocalFilesStats.total }} 个；
+                      成功 {{ hotReloadLocalFilesStats.success }} 个，
+                      失败 {{ hotReloadLocalFilesStats.failed }} 个
                     </p>
+                    <p v-if="hotReload.uploadSummary" class="console-hotreload-mini-hint">{{ hotReload.uploadSummary }}</p>
+                    <el-scrollbar v-if="hotReload.localFiles.length" class="console-hotreload-local-list">
+                      <button
+                        v-for="f in hotReload.localFiles"
+                        :key="f.name"
+                        type="button"
+                        class="console-hotreload-file-item console-hotreload-local-item"
+                        :class="{ active: hotReload.localActiveName === f.name }"
+                        @click="selectHotReloadLocalFile(f.name)"
+                      >
+                        <span class="console-hotreload-file-name">{{ f.name }}</span>
+                        <span class="console-hotreload-local-item-right">
+                          <el-tag
+                            size="small"
+                            :type="
+                              f.status === 'success'
+                                ? 'success'
+                                : f.status === 'failed'
+                                  ? 'danger'
+                                  : f.status === 'uploading'
+                                    ? 'warning'
+                                    : 'info'
+                            "
+                            effect="plain"
+                          >
+                            {{
+                              f.status === "success"
+                                ? "成功"
+                                : f.status === "failed"
+                                  ? "失败"
+                                  : f.status === "uploading"
+                                    ? "上传中"
+                                    : "待上传"
+                            }}
+                          </el-tag>
+                          <el-button
+                            link
+                            type="danger"
+                            class="console-hotreload-local-remove"
+                            @click.stop="removeHotReloadLocalFile(f.name)"
+                          >
+                            移除
+                          </el-button>
+                        </span>
+                      </button>
+                    </el-scrollbar>
                     <div class="console-hotreload-textarea-wrap">
                       <el-input
                         :model-value="hotReload.localPickedText"
@@ -2233,11 +2282,14 @@ const {
   openHotReload,
   closeHotReload,
   selectHotReloadFile,
+  selectHotReloadLocalFile,
   loadHotReloadServerFiles,
   triggerHotReloadFilePick,
   onHotReloadLocalFileChange,
+  removeHotReloadLocalFile,
   clearHotReloadLocalPick,
   uploadHotReloadLocalToSkynet,
+  hotReloadLocalFilesStats,
   hotReloadDiffVisible,
   hotReloadDiffRows,
   openHotReloadDiff,
@@ -4910,6 +4962,31 @@ onUnmounted(() => {
   margin: 0 0 6px;
   font-size: 12px;
   color: #606266;
+}
+
+.console-hotreload-local-list {
+  max-height: 180px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  padding: 6px;
+  background: #fafafa;
+}
+
+.console-hotreload-local-item {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.console-hotreload-local-item-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.console-hotreload-local-remove {
+  font-size: 12px;
 }
 
 .console-hotreload-textarea-wrap {

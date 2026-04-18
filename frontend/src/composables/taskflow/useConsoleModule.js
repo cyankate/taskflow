@@ -53,9 +53,13 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     serverContentLoading: false,
     selectedFile: "",
     serverHint: "",
-    /** 浏览选择的本地文件（浏览器内读取，仅用于对比） */
+    /** 当前选中的本地文件内容（用于对比） */
     localPickedText: "",
     pickedFileName: "",
+    /** 本地待上传文件队列：name/content/status/message */
+    localFiles: [],
+    localActiveName: "",
+    uploadSummary: "",
   });
 
   const consoleForms = reactive({
@@ -307,6 +311,9 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     hotReload.serverContent = "";
     hotReload.localPickedText = "";
     hotReload.pickedFileName = "";
+    hotReload.localFiles = [];
+    hotReload.localActiveName = "";
+    hotReload.uploadSummary = "";
     loadHotReloadServerFiles();
   }
 
@@ -329,26 +336,87 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     }
   }
 
-  function onHotReloadLocalFileChange(ev) {
-    const input = ev?.target;
-    const file = input?.files?.[0];
-    if (input) input.value = "";
-    if (!file) return;
-    hotReload.pickedFileName = file.name;
-    const reader = new FileReader();
-    reader.onload = () => {
-      hotReload.localPickedText = typeof reader.result === "string" ? reader.result : "";
-    };
-    reader.onerror = () => {
+  function syncHotReloadLocalActive() {
+    const files = hotReload.localFiles || [];
+    if (!files.length) {
+      hotReload.localActiveName = "";
+      hotReload.pickedFileName = "";
       hotReload.localPickedText = "";
-      ElMessage.error("读取本地文件失败");
-    };
-    reader.readAsText(file, "UTF-8");
+      return;
+    }
+    let active = files.find((f) => f.name === hotReload.localActiveName);
+    if (!active) {
+      active = files[0];
+      hotReload.localActiveName = active.name;
+    }
+    hotReload.pickedFileName = active.name;
+    hotReload.localPickedText = active.content || "";
+  }
+
+  function readLocalFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("读取本地文件失败"));
+      reader.readAsText(file, "UTF-8");
+    });
+  }
+
+  async function onHotReloadLocalFileChange(ev) {
+    const input = ev?.target;
+    const files = Array.from(input?.files || []);
+    if (input) input.value = "";
+    if (!files.length) return;
+    const addedNames = [];
+    for (const file of files) {
+      try {
+        const text = await readLocalFileAsText(file);
+        const row = {
+          name: file.name,
+          content: text,
+          status: "pending",
+          message: "",
+        };
+        const idx = hotReload.localFiles.findIndex((f) => f.name === row.name);
+        if (idx >= 0) hotReload.localFiles.splice(idx, 1, row);
+        else hotReload.localFiles.push(row);
+        addedNames.push(row.name);
+      } catch {
+        ElMessage.error(`读取文件失败：${file.name}`);
+      }
+    }
+    if (addedNames.length) {
+      hotReload.localActiveName = addedNames[0];
+      hotReload.uploadSummary = "";
+      syncHotReloadLocalActive();
+    }
+  }
+
+  async function selectHotReloadLocalFile(name) {
+    const n = (name || "").trim();
+    if (!n) return;
+    hotReload.localActiveName = n;
+    syncHotReloadLocalActive();
+    const existsOnServer = hotReload.serverFiles.some((f) => f.name === n);
+    if (existsOnServer && hotReload.selectedFile !== n) {
+      hotReload.selectedFile = n;
+      await loadHotReloadServerContent(n);
+    }
+  }
+
+  function removeHotReloadLocalFile(name) {
+    const n = (name || "").trim();
+    if (!n) return;
+    const idx = hotReload.localFiles.findIndex((f) => f.name === n);
+    if (idx >= 0) hotReload.localFiles.splice(idx, 1);
+    syncHotReloadLocalActive();
   }
 
   function clearHotReloadLocalPick() {
-    hotReload.localPickedText = "";
-    hotReload.pickedFileName = "";
+    hotReload.localFiles = [];
+    hotReload.localActiveName = "";
+    hotReload.uploadSummary = "";
+    syncHotReloadLocalActive();
   }
 
   async function uploadHotReloadLocalToSkynet() {
@@ -356,32 +424,56 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
       ElMessage.warning("请先选择当前服务器");
       return;
     }
-    if (!hotReload.pickedFileName) {
+    if (!hotReload.localFiles.length) {
       ElMessage.warning("请先选择本地文件");
       return;
     }
-    const targetName = (hotReload.selectedFile || hotReload.pickedFileName || "").trim();
-    if (!targetName) {
-      ElMessage.warning("缺少目标文件名");
-      return;
-    }
     hotReload.uploadLoading = true;
+    hotReload.uploadSummary = "";
+    let successCount = 0;
+    let failedCount = 0;
     try {
-      const { data } = await api.post("/console/hotreload/skynet/upload", {
-        gateway_id: selectedGatewayId.value,
-        name: targetName,
-        content: String(hotReload.localPickedText ?? ""),
-        encoding: "utf-8",
-      });
-      if (data?.ok === false) {
-        throw new Error(data?.message || "上传失败");
+      for (const item of hotReload.localFiles) {
+        const targetName =
+          hotReload.localFiles.length === 1
+            ? (hotReload.selectedFile || item.name || "").trim()
+            : (item.name || "").trim();
+        if (!targetName) {
+          item.status = "failed";
+          item.message = "缺少目标文件名";
+          failedCount += 1;
+          continue;
+        }
+        item.status = "uploading";
+        item.message = "";
+        try {
+          const { data } = await api.post("/console/hotreload/skynet/upload", {
+            gateway_id: selectedGatewayId.value,
+            name: targetName,
+            content: String(item.content ?? ""),
+            encoding: "utf-8",
+          });
+          if (data?.ok === false) {
+            throw new Error(data?.message || "上传失败");
+          }
+          item.status = "success";
+          item.message = data?.message || "上传成功";
+          successCount += 1;
+        } catch (err) {
+          item.status = "failed";
+          item.message = getErrorMessage(err, "上传失败");
+          failedCount += 1;
+        }
       }
-      ElMessage.success(data?.message || "上传成功");
       await loadHotReloadServerFiles();
-      hotReload.selectedFile = targetName;
-      await loadHotReloadServerContent(targetName);
-    } catch (err) {
-      ElMessage.error(getErrorMessage(err, "上传到服务器失败"));
+      const activeName = hotReload.localActiveName || hotReload.localFiles[0]?.name || "";
+      if (activeName) {
+        hotReload.selectedFile = activeName;
+        await loadHotReloadServerContent(activeName);
+      }
+      hotReload.uploadSummary = `上传完成：成功 ${successCount} 个，失败 ${failedCount} 个`;
+      if (failedCount > 0) ElMessage.warning(hotReload.uploadSummary);
+      else ElMessage.success(hotReload.uploadSummary);
     } finally {
       hotReload.uploadLoading = false;
     }
@@ -413,6 +505,21 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     const b = normalizeTextForLineDiff(hotReload.localPickedText ?? "");
     if (!hotReload.pickedFileName || !b) return false;
     return a !== b;
+  });
+
+  const hotReloadLocalFilesStats = computed(() => {
+    const total = hotReload.localFiles.length;
+    let pending = 0;
+    let uploading = 0;
+    let success = 0;
+    let failed = 0;
+    for (const item of hotReload.localFiles) {
+      if (item.status === "uploading") uploading += 1;
+      else if (item.status === "success") success += 1;
+      else if (item.status === "failed") failed += 1;
+      else pending += 1;
+    }
+    return { total, pending, uploading, success, failed };
   });
 
   function openHotReloadDiff() {
@@ -527,11 +634,14 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     openHotReload,
     closeHotReload,
     selectHotReloadFile,
+    selectHotReloadLocalFile,
     loadHotReloadServerFiles,
     triggerHotReloadFilePick,
     onHotReloadLocalFileChange,
+    removeHotReloadLocalFile,
     clearHotReloadLocalPick,
     uploadHotReloadLocalToSkynet,
+    hotReloadLocalFilesStats,
     hotReloadDiffVisible,
     hotReloadDiffRows,
     openHotReloadDiff,
