@@ -849,7 +849,7 @@
 
           <section v-show="activeTab === 'console'" class="console-page">
             <div class="console-gateway-bar">
-              <span class="console-gateway-label">当前 Skynet 服务器</span>
+              <span class="console-gateway-label">当前服务器</span>
               <el-select
                 v-model="selectedGatewayId"
                 class="console-gateway-select"
@@ -872,7 +872,7 @@
                   <div class="dashboard-panel-title">控制台</div>
                 </template>
                 <p class="console-intro-text">
-                  用于对接 Skynet 游戏服的便捷操作与查询
+                  用于对接服务器游戏的便捷操作与查询
                 </p>
                 <el-alert
                   v-if="consoleStatus.loaded && consoleStatus.hint"
@@ -889,7 +889,7 @@
                 <el-card shadow="never" class="console-tool-card console-hotreload-entry-card" @click="openHotReload">
                   <template #header><span class="console-card-title">数据文件对比 / 热更新</span></template>
                   <p class="console-card-desc">
-                    对比 Skynet 上数据文件与 TaskFlow 后端本机目录中的同名文件，可将本地文件上传到 Skynet。
+                    对比服务器上数据文件与 TaskFlow 后端本机目录中的同名文件，可将本地文件上传到服务器。
                   </p>
                   <el-button class="console-hotreload-entry-button" @click.stop="openHotReload">进入数据文件对比</el-button>
                 </el-card>
@@ -897,14 +897,14 @@
                 <el-card shadow="never" class="console-tool-card console-db-entry-card" @click="openDbExplorer">
                   <template #header><span class="console-card-title">数据库查询</span></template>
                   <p class="console-card-desc">
-                    从 Skynet 拉取表与字段，支持可视化条件与可选 SQL。点击本卡片进入查询页（需已选择上方网关）。
+                    从服务器拉取表与字段，支持可视化条件与可选 SQL。
                   </p>
                   <el-button class="console-db-entry-button" plain @click.stop="openDbExplorer">进入数据库查询</el-button>
                 </el-card>
 
                 <el-card shadow="never" class="console-tool-card console-tool-card-wide">
                   <template #header><span class="console-card-title">发送指令</span></template>
-                  <p class="console-card-desc">向 Skynet 集群或指定服务发送管理指令（Lua/文本协议依项目而定）。</p>
+                  <p class="console-card-desc">向服务器发送管理指令（Lua/文本协议依项目而定）。</p>
                   <el-input
                     v-model="consoleForms.command"
                     type="textarea"
@@ -913,7 +913,7 @@
                     class="mb12"
                   />
                   <div class="console-command-actions">
-                    <el-button type="primary" @click="sendSkynetCommand">发送（占位）</el-button>
+                    <el-button type="primary" @click="sendSkynetCommand">发送</el-button>
                   </div>
                   <el-input
                     v-if="consoleForms.commandResult"
@@ -1133,7 +1133,7 @@
                           :disabled="!hotReload.pickedFileName || !selectedGatewayId"
                           @click="uploadHotReloadLocalToSkynet"
                         >
-                          上传到 Skynet
+                          上传到服务器
                         </el-button>
                         <el-button
                           v-if="hotReload.pickedFileName"

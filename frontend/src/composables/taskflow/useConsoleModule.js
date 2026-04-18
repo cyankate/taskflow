@@ -4,12 +4,6 @@ import { computeSplitDiffRows, normalizeTextForLineDiff } from "../../utils/text
 
 const SKYNET_GATEWAY_STORAGE_KEY = "taskflow_skynet_gateway_id";
 
-/** 后端不可用时仍可选服、进数据库页（纯前端占位） */
-const FALLBACK_SKYNET_GATEWAYS = [
-  { id: "0", label: "示例网关 A（设计占位）", url: "" },
-  { id: "1", label: "示例网关 B（设计占位）", url: "" },
-];
-
 const DB_FILTER_OPS = ["=", "!=", ">", "<", ">=", "<=", "LIKE", "IN", "IS NULL", "IS NOT NULL"];
 
 export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
@@ -130,13 +124,13 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
       consoleStatus.skynet_gateway_configured = !!data?.skynet_gateway_configured;
       consoleStatus.hint = data?.hint || "";
       const list = Array.isArray(data?.gateways) ? data.gateways : [];
-      consoleStatus.gateways = list.length ? list : FALLBACK_SKYNET_GATEWAYS;
+      consoleStatus.gateways = list;
       syncGatewaySelectionFromStorage();
     } catch (err) {
       ElMessage.error(getErrorMessage(err, "加载控制台状态失败"));
       consoleStatus.skynet_gateway_configured = false;
-      consoleStatus.hint = "无法连接接口，已使用本地占位网关，仅便于界面设计。";
-      consoleStatus.gateways = [...FALLBACK_SKYNET_GATEWAYS];
+      consoleStatus.hint = "无法加载控制台网关配置，请稍后重试。";
+      consoleStatus.gateways = [];
       syncGatewaySelectionFromStorage();
     } finally {
       consoleStatus.loaded = true;
@@ -157,7 +151,7 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
 
   function openDbExplorer() {
     if (!selectedGatewayId.value) {
-      ElMessage.warning("请先选择当前 Skynet 服务器");
+      ElMessage.warning("请先选择当前服务器");
       return;
     }
     consoleSubView.value = "db_explorer";
@@ -305,7 +299,7 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
 
   function openHotReload() {
     if (!selectedGatewayId.value) {
-      ElMessage.warning("请先选择当前 Skynet 服务器");
+      ElMessage.warning("请先选择当前服务器");
       return;
     }
     consoleSubView.value = "hot_reload";
@@ -359,7 +353,7 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
 
   async function uploadHotReloadLocalToSkynet() {
     if (!selectedGatewayId.value) {
-      ElMessage.warning("请先选择当前 Skynet 服务器");
+      ElMessage.warning("请先选择当前服务器");
       return;
     }
     if (!hotReload.pickedFileName) {
@@ -387,7 +381,7 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
       hotReload.selectedFile = targetName;
       await loadHotReloadServerContent(targetName);
     } catch (err) {
-      ElMessage.error(getErrorMessage(err, "上传到 Skynet 失败"));
+      ElMessage.error(getErrorMessage(err, "上传到服务器失败"));
     } finally {
       hotReload.uploadLoading = false;
     }
@@ -425,7 +419,7 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     const server = String(hotReload.serverContent ?? "");
     const local = String(hotReload.localPickedText ?? "");
     if (!server.trim() && !local.trim()) {
-      ElMessage.warning("请先加载 Skynet 内容并选择本地文件");
+      ElMessage.warning("请先加载服务器内容并选择本地文件");
       return;
     }
     hotReloadDiffRows.value = computeSplitDiffRows(server, local);
@@ -467,10 +461,8 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
       ElMessage.warning("请输入要发送的内容");
       return;
     }
-    const g = currentSkynetGateway.value;
-    const prefix = g?.url ? `目标：${g.url}\n` : "";
-    consoleForms.commandResult = `${prefix}（示例）尚未连接 Skynet，已记录指令长度 ${cmd.length} 字符。\n实际联调后可在此展示返回结果。`;
-    ElMessage.info("指令发送接口待实现");
+    consoleForms.commandResult = "";
+    ElMessage.warning("指令发送功能暂未接入后端接口");
   }
 
   const dbExplorerTableRows = computed(() => {

@@ -76,7 +76,6 @@
 - 通知提醒（新工单、逾期、即将逾期）
 - 评论沟通（工单评论与修改历史）
 - 看板视图（按状态泳道展示，支持快速状态切换）
-- **控制台**（管理员）：预留与 Skynet 游戏服对接的便捷操作入口；网关与 HTTP 相关项在 `backend/taskflow/config/skynet.json` 配置（如 `http_base`、`servers`、`db_mock`）；**数据库查询**为独立子页（表列表、字段列表、SQL 与多行条件、结果表），接口为 `/api/console/skynet/db/*`
 
 ## 六、启动方式
 

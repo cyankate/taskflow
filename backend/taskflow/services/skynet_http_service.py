@@ -55,7 +55,7 @@ def _request_headers() -> dict[str, str]:
         headers["Authorization"] = f"Bearer {bearer}"
     key = skynet_http_api_key()
     key_header = skynet_http_api_key_header()
-    if key:
+    if key and key_header:
         headers[key_header] = key
     return headers
 
@@ -113,7 +113,7 @@ def normalize_tables_response(raw: Any) -> tuple[list[dict[str, str]], str]:
     elif isinstance(raw, list):
         tables_raw = raw
     if tables_raw is None:
-        return [], message or "Skynet 返回中未找到表列表字段"
+        return [], message or "服务器返回中未找到表列表字段"
     if not isinstance(tables_raw, list):
         return [], message or "表列表格式无效"
 
@@ -139,7 +139,7 @@ def normalize_columns_response(raw: Any) -> tuple[list[dict[str, str]], str]:
     elif isinstance(raw, list):
         cols_raw = raw
     if cols_raw is None:
-        return [], message or "Skynet 返回中未找到字段列表"
+        return [], message or "服务器返回中未找到字段列表"
     if not isinstance(cols_raw, list):
         return [], message or "字段列表格式无效"
 
@@ -230,7 +230,7 @@ def post_db_query(gateway: dict[str, Any], body: dict[str, Any]) -> tuple[list[s
     """返回 columns, rows, message, error（业务错误时 error 非空）。"""
     base = effective_skynet_base_url(gateway)
     if not base:
-        return [], [], "", "未配置 Skynet HTTP 地址"
+        return [], [], "", "未配置服务器 HTTP 地址"
     url = _db_unified_url(base)
     field = skynet_db_action_field()
     raw = skynet_post_json(url, json_body={**body, field: "query"})

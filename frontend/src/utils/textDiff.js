@@ -64,8 +64,8 @@ function buildSplitDiffRowsFromParts(parts) {
 }
 
 /**
- * 左右对照行数据：左列为 Skynet，右列为本地。
- * type: equal 同行相同 | change 同行替换 | remove 仅 Skynet | add 仅本地
+ * 左右对照行数据：左列为服务器，右列为本地。
+ * type: equal 同行相同 | change 同行替换 | remove 仅服务器 | add 仅本地
  */
 export function computeSplitDiffRows(serverText, localText) {
   const server = normalizeTextForLineDiff(serverText);

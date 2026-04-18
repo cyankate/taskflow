@@ -630,14 +630,6 @@ def meta() -> Any:
     )
 
 
-def _design_time_skynet_gateways() -> list[dict[str, str]]:
-    """占位网关：skynet.json 未配置有效网关时仍可在控制台选服、进数据库页做界面设计。"""
-    return [
-        {"id": "0", "label": "示例网关 A（设计占位）", "url": ""},
-        {"id": "1", "label": "示例网关 B（设计占位）", "url": ""},
-    ]
-
-
 def _resolve_console_gateway(gateway_id_raw: Any) -> dict[str, str] | None:
     if gateway_id_raw is None:
         return None
@@ -649,30 +641,7 @@ def _resolve_console_gateway(gateway_id_raw: Any) -> dict[str, str] | None:
     for item in console_gateways_from_config():
         if str(item["id"]) == gid:
             return item
-    for item in _design_time_skynet_gateways():
-        if str(item["id"]) == gid:
-            return item
     return None
-
-
-def _skynet_db_use_demo_tables(gateway: dict[str, str] | None) -> bool:
-    """skynet.json 中 db_mock，或无可用 Skynet HTTP 基址且处于纯占位网关时，使用本地演示数据。"""
-    from taskflow.config.skynet_settings import (
-        console_gateways_from_config,
-        is_skynet_http_base_configured,
-        skynet_db_mock,
-    )
-    from taskflow.services import skynet_http_service as sk
-
-    if skynet_db_mock():
-        return True
-    if gateway and sk.effective_skynet_base_url(gateway):
-        return False
-    has_cfg_gateways = bool(console_gateways_from_config())
-    has_http_base = is_skynet_http_base_configured()
-    if not has_cfg_gateways and not has_http_base:
-        return True
-    return False
 
 
 @api_bp.get("/console/skynet/db/tables")
@@ -680,17 +649,7 @@ def _skynet_db_use_demo_tables(gateway: dict[str, str] | None) -> bool:
 def console_skynet_db_tables() -> Any:
     gateway = _resolve_console_gateway(request.args.get("gateway_id"))
     if not gateway:
-        return jsonify({"message": "无效的 gateway_id 或未配置 Skynet 网关", "tables": []}), 400
-    if _skynet_db_use_demo_tables(gateway):
-        return jsonify(
-            {
-                "tables": [
-                    {"name": "player", "comment": "玩家表（演示数据）"},
-                    {"name": "guild", "comment": "公会表（演示数据）"},
-                ],
-                "message": "",
-            }
-        )
+        return jsonify({"message": "无效的 gateway_id 或未配置服务器网关", "tables": []}), 400
     from taskflow.services import skynet_http_service as sk
 
     try:
@@ -698,7 +657,7 @@ def console_skynet_db_tables() -> Any:
         return jsonify({"tables": tables, "message": message})
     except Exception as exc:
         current_app.logger.warning("Skynet db/tables: %s", exc)
-        return jsonify({"tables": [], "message": f"请求 Skynet 失败: {exc}"})
+        return jsonify({"tables": [], "message": f"请求服务器失败: {exc}"})
 
 
 @api_bp.get("/console/skynet/db/columns")
@@ -710,30 +669,6 @@ def console_skynet_db_columns() -> Any:
         return jsonify({"message": "无效的 gateway_id", "columns": []}), 400
     if not table:
         return jsonify({"message": "缺少参数 table", "columns": []}), 400
-    if _skynet_db_use_demo_tables(gateway):
-        if table == "player":
-            return jsonify(
-                {
-                    "columns": [
-                        {"name": "id", "type": "int"},
-                        {"name": "name", "type": "string"},
-                        {"name": "level", "type": "int"},
-                        {"name": "gold", "type": "int"},
-                    ],
-                    "message": "",
-                }
-            )
-        if table == "guild":
-            return jsonify(
-                {
-                    "columns": [
-                        {"name": "id", "type": "int"},
-                        {"name": "name", "type": "string"},
-                    ],
-                    "message": "",
-                }
-            )
-        return jsonify({"columns": [{"name": "id", "type": "unknown"}], "message": ""})
     from taskflow.services import skynet_http_service as sk
 
     try:
@@ -741,7 +676,7 @@ def console_skynet_db_columns() -> Any:
         return jsonify({"columns": columns, "message": message})
     except Exception as exc:
         current_app.logger.warning("Skynet db/columns: %s", exc)
-        return jsonify({"columns": [], "message": f"请求 Skynet 失败: {exc}"})
+        return jsonify({"columns": [], "message": f"请求服务器失败: {exc}"})
 
 
 @api_bp.post("/console/skynet/db/query")
@@ -751,14 +686,6 @@ def console_skynet_db_query() -> Any:
     gateway = _resolve_console_gateway(payload.get("gateway_id"))
     if not gateway:
         return jsonify({"error": "无效的 gateway_id", "columns": [], "rows": []}), 400
-    if _skynet_db_use_demo_tables(gateway):
-        return jsonify(
-            {
-                "columns": [],
-                "rows": [],
-                "message": "当前为演示模式，未转发真实查询。请在 skynet.json 中配置真实网关并将 db_mock 设为 false。",
-            }
-        )
     from taskflow.services import skynet_http_service as sk
 
     body = {
@@ -782,17 +709,12 @@ def console_skynet_db_query() -> Any:
 def console_status() -> Any:
     from taskflow.config.skynet_settings import console_gateways_from_config
 
-    from_cfg = console_gateways_from_config()
-    if from_cfg:
-        gateways = from_cfg
-        configured = True
-    else:
-        gateways = _design_time_skynet_gateways()
-        configured = False
+    gateways = console_gateways_from_config()
+    configured = bool(gateways)
     return jsonify(
         {
             "skynet_gateway_configured": configured,
-            "hint": "",
+            "hint": "" if configured else "未配置可用服务器，请检查 backend/taskflow/config/skynet.json",
             "gateways": gateways,
         }
     )
@@ -821,7 +743,7 @@ def _normalize_hotreload_files(raw: Any) -> list[dict[str, Any]]:
 
 def _normalize_hotreload_skynet_content(raw: Any) -> dict[str, Any]:
     if raw is None:
-        return {"ok": False, "text": "", "message": "Skynet 无响应"}
+        return {"ok": False, "text": "", "message": "服务器无响应"}
     if not isinstance(raw, dict):
         return {"ok": False, "text": "", "message": "响应格式无效"}
     if raw.get("error"):
@@ -874,7 +796,7 @@ def console_hotreload_skynet_files() -> Any:
     if not gateway:
         return jsonify({"files": [], "message": "无效的 gateway_id"}), 400
     if not sk.effective_skynet_base_url(gateway):
-        return jsonify({"files": [], "message": "网关未配置 Skynet 地址"}), 400
+        return jsonify({"files": [], "message": "网关未配置服务器地址"}), 400
     field = skynet_hotreload_action_field()
     try:
         raw = sk.post_hotreload(gateway, {field: "list"})
@@ -882,7 +804,7 @@ def console_hotreload_skynet_files() -> Any:
         current_app.logger.warning("Skynet hotreload list: %s", exc)
         return jsonify({"files": [], "message": str(exc)}), 502
     if raw is None:
-        return jsonify({"files": [], "message": "无法连接 Skynet"}), 502
+        return jsonify({"files": [], "message": "无法连接服务器"}), 502
     msg = str(raw.get("message") or raw.get("msg") or "") if isinstance(raw, dict) else ""
     files = _normalize_hotreload_files(raw)
     return jsonify({"files": files, "message": msg})
@@ -907,7 +829,7 @@ def console_hotreload_skynet_content() -> Any:
         current_app.logger.warning("Skynet hotreload get: %s", exc)
         return jsonify({"ok": False, "message": str(exc)}), 502
     if raw is None:
-        return jsonify({"ok": False, "message": "无法连接 Skynet"}), 502
+        return jsonify({"ok": False, "message": "无法连接服务器"}), 502
     out = _normalize_hotreload_skynet_content(raw)
     return jsonify(out)
 
@@ -951,7 +873,7 @@ def console_hotreload_skynet_upload() -> Any:
             last_error = str(exc)
             continue
         if raw is None:
-            last_error = "无法连接 Skynet"
+            last_error = "无法连接服务器"
             continue
         if isinstance(raw, dict) and raw.get("error"):
             last_error = str(raw.get("error"))
@@ -960,10 +882,10 @@ def console_hotreload_skynet_upload() -> Any:
         if isinstance(raw, dict):
             msg = str(raw.get("message") or raw.get("msg") or "").strip()
         if not msg:
-            msg = f"已上传到 Skynet（action={action}）"
+            msg = f"已上传到服务器（action={action}）"
         return jsonify({"ok": True, "message": msg, "action": action})
 
-    return jsonify({"ok": False, "message": last_error or "上传失败，请检查 Skynet hotreload 接口动作名"}), 502
+    return jsonify({"ok": False, "message": last_error or "上传失败，请检查服务器 hotreload 接口动作名"}), 502
 
 
 @api_bp.get("/users")
