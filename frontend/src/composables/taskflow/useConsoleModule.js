@@ -465,6 +465,30 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     ElMessage.warning("指令发送功能暂未接入后端接口");
   }
 
+  function isExpandableDbCellValue(value) {
+    return value !== null && typeof value === "object";
+  }
+
+  function formatDbCellPreview(value) {
+    if (value == null) return "";
+    if (!isExpandableDbCellValue(value)) return String(value);
+    try {
+      const text = JSON.stringify(value);
+      return text.length > 80 ? `${text.slice(0, 80)}...` : text;
+    } catch {
+      return "[对象]";
+    }
+  }
+
+  function formatDbCellExpanded(value) {
+    if (!isExpandableDbCellValue(value)) return String(value ?? "");
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return "[对象无法序列化]";
+    }
+  }
+
   const dbExplorerTableRows = computed(() => {
     const cols = dbExplorer.resultColumns || [];
     if (!cols.length) return [];
@@ -515,5 +539,8 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     copyAccountInfo,
     sendSkynetCommand,
     dbExplorerTableRows,
+    isExpandableDbCellValue,
+    formatDbCellPreview,
+    formatDbCellExpanded,
   };
 }

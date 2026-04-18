@@ -1048,11 +1048,22 @@
                   <el-table-column
                     v-for="col in dbExplorer.resultColumns"
                     :key="col"
-                    :prop="col"
                     :label="col"
                     min-width="120"
-                    show-overflow-tooltip
-                  />
+                  >
+                    <template #default="{ row }">
+                      <template v-if="isExpandableDbCellValue(row[col])">
+                        <el-popover placement="top" trigger="click" width="560">
+                          <template #reference>
+                            <el-button link type="primary" class="console-db-cell-expand-btn">展开</el-button>
+                          </template>
+                          <pre class="console-db-cell-json">{{ formatDbCellExpanded(row[col]) }}</pre>
+                        </el-popover>
+                        <span class="console-db-cell-preview">{{ formatDbCellPreview(row[col]) }}</span>
+                      </template>
+                      <span v-else>{{ formatDbCellPreview(row[col]) }}</span>
+                    </template>
+                  </el-table-column>
                 </el-table>
               </el-card>
             </div>
@@ -2233,6 +2244,9 @@ const {
   closeHotReloadDiff,
   sendSkynetCommand,
   dbExplorerTableRows,
+  isExpandableDbCellValue,
+  formatDbCellPreview,
+  formatDbCellExpanded,
   analytics,
   workloadRows,
   densityCalendarWeeks,
@@ -5318,6 +5332,28 @@ onUnmounted(() => {
 
 .console-db-table {
   width: 100%;
+}
+
+.console-db-cell-expand-btn {
+  margin-right: 6px;
+  padding: 0;
+  min-height: 20px;
+}
+
+.console-db-cell-preview {
+  color: #606266;
+  font-size: 12px;
+}
+
+.console-db-cell-json {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre;
+  word-break: normal;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 @media (max-width: 1100px) {
