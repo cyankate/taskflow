@@ -22,8 +22,8 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 NPM_BIN="${NPM_BIN:-npm}"
 USE_SUDO="${USE_SUDO:-1}"
 AUTO_INSTALL_DEPS="${AUTO_INSTALL_DEPS:-0}"
-# 设为 1 时不在服务器执行 npm ci / vite build，使用已提交的 frontend/dist（本地构建后推送）
-SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
+# 默认跳过前端构建：服务器直接使用已提交的 frontend/dist（本地构建后推送）
+SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-1}"
 
 run_as_root() {
   if [[ "${EUID:-$(id -u)}" -eq 0 || "$USE_SUDO" = "0" ]]; then
@@ -35,7 +35,9 @@ run_as_root() {
 
 ensure_prerequisites() {
   if [[ "$AUTO_INSTALL_DEPS" = "1" ]]; then
-    if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 || ! command -v "$NPM_BIN" >/dev/null 2>&1 || ! command -v nginx >/dev/null 2>&1; then
+    if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 || ! command -v nginx >/dev/null 2>&1; then
+      install_os_dependencies
+    elif [[ "$SKIP_FRONTEND_BUILD" != "1" ]] && ! command -v "$NPM_BIN" >/dev/null 2>&1; then
       install_os_dependencies
     fi
   fi
@@ -45,7 +47,7 @@ ensure_prerequisites() {
   }
   if [[ "$SKIP_FRONTEND_BUILD" != "1" ]]; then
     command -v "$NPM_BIN" >/dev/null 2>&1 || {
-      echo "[error] npm not found (or set SKIP_FRONTEND_BUILD=1 to use prebuilt frontend/dist)"
+      echo "[error] npm not found (set SKIP_FRONTEND_BUILD=0 if you want server-side frontend build)"
       exit 1
     }
   fi
@@ -187,8 +189,8 @@ usage() {
 Usage: ./linux_prod_setup.sh [command]
 
 Commands:
-  setup      Install deps + build + write systemd/nginx + restart services (default)
-  build      Build backend/frontend only
+  setup      Install deps + (optional frontend build) + write systemd/nginx + restart services (default)
+  build      Build backend + optional frontend build only
   render     Render systemd/nginx files only
   reload     Reload systemd/nginx only
   status     Show service status
@@ -203,7 +205,7 @@ Optional env vars:
   GUNICORN_WORKERS=3
   USE_SUDO=1
   AUTO_INSTALL_DEPS=0
-  SKIP_FRONTEND_BUILD=0   set to 1 to skip npm/vite on server; require committed frontend/dist
+  SKIP_FRONTEND_BUILD=1   default skip npm/vite on server; require committed frontend/dist
 EOF
 }
 

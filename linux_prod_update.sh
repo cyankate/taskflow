@@ -11,7 +11,7 @@ ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.production}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 NPM_BIN="${NPM_BIN:-npm}"
 USE_SUDO="${USE_SUDO:-1}"
-SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
+SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-1}"
 
 run_as_root() {
   if [[ "${EUID:-$(id -u)}" -eq 0 || "$USE_SUDO" = "0" ]]; then
@@ -28,7 +28,7 @@ ensure_prerequisites() {
   }
   if [[ "$SKIP_FRONTEND_BUILD" != "1" ]]; then
     command -v "$NPM_BIN" >/dev/null 2>&1 || {
-      echo "[error] npm not found (or set SKIP_FRONTEND_BUILD=1 to use prebuilt frontend/dist)"
+      echo "[error] npm not found (set SKIP_FRONTEND_BUILD=0 if you want server-side frontend build)"
       exit 1
     }
   fi
@@ -112,9 +112,9 @@ usage() {
 Usage: ./linux_prod_update.sh [command]
 
 Commands:
-  update   Sync deps + build + restart backend + reload nginx (default)
+  update   Sync deps + optional frontend build + restart backend + reload nginx (default)
   deps     Sync backend/frontend dependencies only
-  build    Build frontend assets only
+  build    Build or verify frontend assets only
   reload   Restart backend + reload nginx only
   status   Show backend/nginx status
 
@@ -125,7 +125,7 @@ Optional env vars:
   PYTHON_BIN=python3
   NPM_BIN=npm
   USE_SUDO=1
-  SKIP_FRONTEND_BUILD=0   set to 1 to skip npm/vite on server; require committed frontend/dist
+  SKIP_FRONTEND_BUILD=1   default skip npm/vite on server; require committed frontend/dist
 EOF
 }
 
