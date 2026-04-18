@@ -1,0 +1,16 @@
+{
+  "http_base": "http://8.163.100.189:8889",
+  "server_label": "正式服",
+  "db_mock": false,
+  "http_verify_ssl": true,
+  "http_timeout_sec": 30,
+  "api_prefix": "/api/web/",
+  "db_action_field": "action",
+  "hotreload": {
+    "api_path": "hotreload",
+    "action_field": "action"
+  },
+  "paths": {
+    "query": "db/query"
+  }
+}

@@ -22,6 +22,8 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 NPM_BIN="${NPM_BIN:-npm}"
 USE_SUDO="${USE_SUDO:-1}"
 AUTO_INSTALL_DEPS="${AUTO_INSTALL_DEPS:-0}"
+# 设为 1 时不在服务器执行 npm ci / vite build，使用已提交的 frontend/dist（本地构建后推送）
+SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
 
 run_as_root() {
   if [[ "${EUID:-$(id -u)}" -eq 0 || "$USE_SUDO" = "0" ]]; then
@@ -41,10 +43,12 @@ ensure_prerequisites() {
     echo "[error] python3 not found"
     exit 1
   }
-  command -v "$NPM_BIN" >/dev/null 2>&1 || {
-    echo "[error] npm not found"
-    exit 1
-  }
+  if [[ "$SKIP_FRONTEND_BUILD" != "1" ]]; then
+    command -v "$NPM_BIN" >/dev/null 2>&1 || {
+      echo "[error] npm not found (or set SKIP_FRONTEND_BUILD=1 to use prebuilt frontend/dist)"
+      exit 1
+    }
+  fi
   command -v nginx >/dev/null 2>&1 || {
     echo "[error] nginx not found, please install nginx first or set AUTO_INSTALL_DEPS=1"
     exit 1
@@ -95,6 +99,15 @@ install_backend_dependencies() {
   deactivate
 }
 
+ensure_frontend_dist() {
+  if [[ ! -f "$FRONTEND_DIR/dist/index.html" ]]; then
+    echo "[error] SKIP_FRONTEND_BUILD=1 but frontend/dist is missing or incomplete (expected $FRONTEND_DIR/dist/index.html)"
+    echo "        On dev machine: cd frontend && npm ci && npm run build, then commit and push frontend/dist"
+    exit 1
+  fi
+  echo "[frontend] using prebuilt dist at $FRONTEND_DIR/dist (SKIP_FRONTEND_BUILD=1)"
+}
+
 build_frontend() {
   echo "[frontend] installing dependencies..."
   if [[ -f "$FRONTEND_DIR/package-lock.json" ]]; then
@@ -104,6 +117,14 @@ build_frontend() {
   fi
   echo "[frontend] building production assets..."
   (cd "$FRONTEND_DIR" && "$NPM_BIN" run build)
+}
+
+maybe_build_frontend() {
+  if [[ "$SKIP_FRONTEND_BUILD" = "1" ]]; then
+    ensure_frontend_dist
+  else
+    build_frontend
+  fi
 }
 
 render_service_file() {
@@ -182,6 +203,7 @@ Optional env vars:
   GUNICORN_WORKERS=3
   USE_SUDO=1
   AUTO_INSTALL_DEPS=0
+  SKIP_FRONTEND_BUILD=0   set to 1 to skip npm/vite on server; require committed frontend/dist
 EOF
 }
 
@@ -192,7 +214,7 @@ main() {
   case "$cmd" in
     setup)
       install_backend_dependencies
-      build_frontend
+      maybe_build_frontend
       render_service_file
       render_nginx_file
       reload_services
@@ -200,7 +222,7 @@ main() {
       ;;
     build)
       install_backend_dependencies
-      build_frontend
+      maybe_build_frontend
       ;;
     render)
       render_service_file

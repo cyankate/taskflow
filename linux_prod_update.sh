@@ -11,6 +11,7 @@ ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.production}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 NPM_BIN="${NPM_BIN:-npm}"
 USE_SUDO="${USE_SUDO:-1}"
+SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
 
 run_as_root() {
   if [[ "${EUID:-$(id -u)}" -eq 0 || "$USE_SUDO" = "0" ]]; then
@@ -25,10 +26,12 @@ ensure_prerequisites() {
     echo "[error] python3 not found"
     exit 1
   }
-  command -v "$NPM_BIN" >/dev/null 2>&1 || {
-    echo "[error] npm not found"
-    exit 1
-  }
+  if [[ "$SKIP_FRONTEND_BUILD" != "1" ]]; then
+    command -v "$NPM_BIN" >/dev/null 2>&1 || {
+      echo "[error] npm not found (or set SKIP_FRONTEND_BUILD=1 to use prebuilt frontend/dist)"
+      exit 1
+    }
+  fi
   command -v systemctl >/dev/null 2>&1 || {
     echo "[error] systemctl not found"
     exit 1
@@ -58,6 +61,15 @@ sync_backend_deps() {
   deactivate
 }
 
+ensure_frontend_dist() {
+  if [[ ! -f "$FRONTEND_DIR/dist/index.html" ]]; then
+    echo "[error] SKIP_FRONTEND_BUILD=1 but frontend/dist is missing or incomplete (expected $FRONTEND_DIR/dist/index.html)"
+    echo "        On dev machine: cd frontend && npm ci && npm run build, then commit and push frontend/dist"
+    exit 1
+  fi
+  echo "[frontend] using prebuilt dist at $FRONTEND_DIR/dist (SKIP_FRONTEND_BUILD=1)"
+}
+
 build_frontend() {
   echo "[frontend] syncing dependencies..."
   if [[ -f "$FRONTEND_DIR/package-lock.json" ]]; then
@@ -67,6 +79,14 @@ build_frontend() {
   fi
   echo "[frontend] building assets..."
   (cd "$FRONTEND_DIR" && "$NPM_BIN" run build)
+}
+
+maybe_build_frontend() {
+  if [[ "$SKIP_FRONTEND_BUILD" = "1" ]]; then
+    ensure_frontend_dist
+  else
+    build_frontend
+  fi
 }
 
 reload_services() {
@@ -105,6 +125,7 @@ Optional env vars:
   PYTHON_BIN=python3
   NPM_BIN=npm
   USE_SUDO=1
+  SKIP_FRONTEND_BUILD=0   set to 1 to skip npm/vite on server; require committed frontend/dist
 EOF
 }
 
@@ -116,20 +137,24 @@ main() {
   case "$cmd" in
     update)
       sync_backend_deps
-      build_frontend
+      maybe_build_frontend
       reload_services
       show_status
       ;;
     deps)
       sync_backend_deps
-      if [[ -f "$FRONTEND_DIR/package-lock.json" ]]; then
-        (cd "$FRONTEND_DIR" && "$NPM_BIN" ci)
+      if [[ "$SKIP_FRONTEND_BUILD" = "1" ]]; then
+        echo "[frontend] skipping npm (SKIP_FRONTEND_BUILD=1)"
       else
-        (cd "$FRONTEND_DIR" && "$NPM_BIN" install)
+        if [[ -f "$FRONTEND_DIR/package-lock.json" ]]; then
+          (cd "$FRONTEND_DIR" && "$NPM_BIN" ci)
+        else
+          (cd "$FRONTEND_DIR" && "$NPM_BIN" install)
+        fi
       fi
       ;;
     build)
-      build_frontend
+      maybe_build_frontend
       ;;
     reload)
       reload_services

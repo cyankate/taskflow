@@ -54,6 +54,7 @@ import {
 import { useProjectModule } from "./taskflow/useProjectModule";
 import { useTicketModule } from "./taskflow/useTicketModule";
 import { useWikiModule } from "./taskflow/useWikiModule";
+import { useConsoleModule } from "./taskflow/useConsoleModule";
 import { useAuthState } from "./taskflow/useAuthState";
 import { usePaginationState } from "./taskflow/usePaginationState";
 
@@ -350,6 +351,58 @@ export function useTaskflowApp() {
     MAX_ATTACHMENT_SIZE_MB,
     normalizeAttachments,
   });
+
+  const {
+    consoleStatus,
+    consoleForms,
+    consoleSubView,
+    dbExplorer,
+    filterOperators,
+    selectedGatewayId,
+    currentSkynetGateway,
+    loadConsoleStatus,
+    openDbExplorer,
+    closeDbExplorer,
+    selectDbTable,
+    addFilterRow,
+    removeFilterRow,
+    needsFilterValue,
+    runDbExplorerQuery,
+    clearDbExplorerResult,
+    clearDbExplorerSql,
+    clearDbExplorerFilters,
+    hotReload,
+    hotReloadFileInputRef,
+    hotReloadDiffers,
+    openHotReload,
+    closeHotReload,
+    selectHotReloadFile,
+    loadHotReloadServerFiles,
+    triggerHotReloadFilePick,
+    onHotReloadLocalFileChange,
+    clearHotReloadLocalPick,
+    uploadHotReloadLocalToSkynet,
+    hotReloadDiffVisible,
+    hotReloadDiffRows,
+    openHotReloadDiff,
+    closeHotReloadDiff,
+    copyAccountInfo,
+    sendSkynetCommand,
+    dbExplorerTableRows,
+  } = useConsoleModule({
+    api,
+    ElMessage,
+    getErrorMessage,
+  });
+
+  watch(
+    () => activeTab.value,
+    (tab) => {
+      if (tab === "console") {
+        loadConsoleStatus();
+      }
+    },
+  );
 
   let loadVersionsForTicketModule = async () => {};
 
@@ -881,6 +934,42 @@ export function useTaskflowApp() {
     openWikiDetail,
     openWikiDetailByRow,
     removeWikiArticle,
+    consoleStatus,
+    consoleForms,
+    consoleSubView,
+    dbExplorer,
+    filterOperators,
+    selectedGatewayId,
+    currentSkynetGateway,
+    loadConsoleStatus,
+    openDbExplorer,
+    closeDbExplorer,
+    selectDbTable,
+    addFilterRow,
+    removeFilterRow,
+    needsFilterValue,
+    runDbExplorerQuery,
+    clearDbExplorerResult,
+    clearDbExplorerSql,
+    clearDbExplorerFilters,
+    hotReload,
+    hotReloadFileInputRef,
+    hotReloadDiffers,
+    openHotReload,
+    closeHotReload,
+    selectHotReloadFile,
+    loadHotReloadServerFiles,
+    triggerHotReloadFilePick,
+    onHotReloadLocalFileChange,
+    clearHotReloadLocalPick,
+    uploadHotReloadLocalToSkynet,
+    hotReloadDiffVisible,
+    hotReloadDiffRows,
+    openHotReloadDiff,
+    closeHotReloadDiff,
+    copyAccountInfo,
+    sendSkynetCommand,
+    dbExplorerTableRows,
     openUserDialog,
     saveUser,
     removeUser,

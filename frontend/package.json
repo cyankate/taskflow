@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "axios": "^1.13.0",
+    "diff": "^8.0.4",
     "element-plus": "^2.11.4",
     "vue": "^3.5.22"
   },
