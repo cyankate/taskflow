@@ -1080,7 +1080,6 @@
                 <el-button link type="primary" class="console-db-back" @click="closeHotReload">← 返回控制台</el-button>
                 <h3 class="console-hotreload-heading">数据文件对比</h3>
                 <span v-if="currentSkynetGateway" class="console-db-gateway-pill">{{ currentSkynetGateway.label }}</span>
-                <el-tag v-if="hotReloadDiffers" type="warning" size="small" effect="plain">与服务器内容不一致</el-tag>
                 <el-button
                   type="primary"
                   size="small"
@@ -1088,7 +1087,8 @@
                   @click="openHotReloadDiff"
                 >
                   对比高亮
-                </el-button> 
+                </el-button>
+                <el-tag v-if="hotReloadDiffers" type="warning" size="small" effect="plain">与服务器内容不一致</el-tag>
               </div>
               <p class="console-hotreload-note">
                 左侧列表来自服务器；右侧下方用「浏览」在本地任选文件，仅在本页以 UTF-8 文本读取后对比，不会上传到服务器。
