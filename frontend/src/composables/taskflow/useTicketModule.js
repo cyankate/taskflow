@@ -4,6 +4,7 @@ export function useTicketModule({
   ElMessageBox,
   getErrorMessage,
   ticketDialog,
+  ticketDialogAttachmentError,
   ticketDetail,
   ticketAttachmentError,
   ticketFilter,
@@ -26,6 +27,13 @@ export function useTicketModule({
   refreshAllData,
 }) {
   let quickSaving = false;
+
+  function normalizeRoleId(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) return asNumber;
+    return value;
+  }
 
   async function loadTickets() {
     const params = {};
@@ -69,7 +77,7 @@ export function useTicketModule({
           id: null,
           title: "",
           description: "",
-          module: "",
+          module: "数值",
           ticket_type: meta.ticket_types[0],
           sub_type: "策划需求",
           project_id: targetProjectId,
@@ -82,10 +90,13 @@ export function useTicketModule({
           related_task_id: null,
           start_time: "",
           end_time: "",
+          attachments: [],
         };
     if (ticketDialog.form.ticket_type === "BUG单" && !ticketDialog.form.sub_type) {
       ticketDialog.form.sub_type = "BUG修复";
     }
+    ticketDialog.form.attachments = normalizeAttachments(ticketDialog.form.attachments);
+    ticketDialogAttachmentError.value = "";
     ticketDialog.visible = true;
   }
 
@@ -155,6 +166,7 @@ export function useTicketModule({
     if (!isEditing && !closeAfterSave) {
       ticketDialog.form.title = "";
       ticketDialog.form.description = "";
+      ticketDialog.form.attachments = [];
       ElMessage.success("工单已创建，可继续新增");
       return;
     }
@@ -213,6 +225,9 @@ export function useTicketModule({
     };
     ticketDetail.quickForm = {
       priority: ticket.priority || "中",
+      executor_id: normalizeRoleId(ticket.executor_id),
+      planner_id: normalizeRoleId(ticket.planner_id),
+      tester_id: normalizeRoleId(ticket.tester_id),
     };
     ticketDetail.comments = data.comments;
     ticketDetail.commentReplies = data.comment_replies || [];
@@ -237,13 +252,33 @@ export function useTicketModule({
 
   async function saveTicketQuickEdit() {
     if (!ticketDetail.ticket?.id) return;
-    const unchanged = ticketDetail.quickForm.priority === ticketDetail.ticket.priority;
+    const nextExecutorId = normalizeRoleId(ticketDetail.quickForm.executor_id);
+    const nextPlannerId = normalizeRoleId(ticketDetail.quickForm.planner_id);
+    const nextTesterId = normalizeRoleId(ticketDetail.quickForm.tester_id);
+    const currentExecutorId = normalizeRoleId(ticketDetail.ticket.executor_id);
+    const currentPlannerId = normalizeRoleId(ticketDetail.ticket.planner_id);
+    const currentTesterId = normalizeRoleId(ticketDetail.ticket.tester_id);
+    const unchanged =
+      ticketDetail.quickForm.priority === ticketDetail.ticket.priority &&
+      nextExecutorId === currentExecutorId &&
+      nextPlannerId === currentPlannerId &&
+      nextTesterId === currentTesterId;
     if (unchanged || quickSaving) return;
 
     quickSaving = true;
-    const payload = {
-      priority: ticketDetail.quickForm.priority,
-    };
+    const payload = {};
+    if (ticketDetail.quickForm.priority !== ticketDetail.ticket.priority) {
+      payload.priority = ticketDetail.quickForm.priority;
+    }
+    if (nextExecutorId !== currentExecutorId) {
+      payload.executor_id = nextExecutorId;
+    }
+    if (nextPlannerId !== currentPlannerId) {
+      payload.planner_id = nextPlannerId;
+    }
+    if (nextTesterId !== currentTesterId) {
+      payload.tester_id = nextTesterId;
+    }
     try {
       await api.put(`/tickets/${ticketDetail.ticket.id}`, payload);
       await Promise.all([openTicketDetail({ id: ticketDetail.ticket.id }), refreshAllData()]);
@@ -252,6 +287,10 @@ export function useTicketModule({
     } finally {
       quickSaving = false;
     }
+  }
+
+  async function saveTicketAssigneeQuick() {
+    await saveTicketQuickEdit();
   }
 
   async function saveTicketDetailEdit() {
@@ -268,12 +307,16 @@ export function useTicketModule({
 
   async function runTicketFlowAction(action, reason = "") {
     if (!ticketDetail.ticket?.id) return;
-    if (action === "submit") {
+    if (action === "start") {
+      await api.post(`/tickets/${ticketDetail.ticket.id}/flow/start`);
+    } else if (action === "submit") {
       await api.post(`/tickets/${ticketDetail.ticket.id}/flow/submit`);
     } else if (action === "approve") {
       await api.post(`/tickets/${ticketDetail.ticket.id}/flow/approve`);
     } else if (action === "reject") {
       await api.post(`/tickets/${ticketDetail.ticket.id}/flow/reject`, { reason });
+    } else if (action === "reopen") {
+      await api.post(`/tickets/${ticketDetail.ticket.id}/flow/reopen`);
     }
     await Promise.all([openTicketDetail({ id: ticketDetail.ticket.id }), refreshAllData()]);
   }
@@ -335,6 +378,57 @@ export function useTicketModule({
       ElMessage.error(ticketAttachmentError.value);
     }
     event.target.value = "";
+  }
+
+  async function onTicketDialogAttachmentChange(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    ticketDialogAttachmentError.value = "";
+    const invalid = files.find((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/"));
+    if (invalid) {
+      ticketDialogAttachmentError.value = "仅支持图片和视频附件";
+      ElMessage.warning(ticketDialogAttachmentError.value);
+      event.target.value = "";
+      return;
+    }
+    const oversize = files.find((file) => file.size > MAX_ATTACHMENT_SIZE_BYTES);
+    if (oversize) {
+      ticketDialogAttachmentError.value = `文件「${oversize.name}」超过 ${MAX_ATTACHMENT_SIZE_MB}MB，请压缩后再上传`;
+      ElMessage.warning(ticketDialogAttachmentError.value);
+      event.target.value = "";
+      return;
+    }
+    try {
+      const mapped = await Promise.all(
+        files.map(async (file) => {
+          const formData = new FormData();
+          formData.append("file", file);
+          const { data } = await api.post("/uploads?scope=ticket", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+          return {
+            name: data.name || file.name,
+            type: data.type || data.mime || file.type,
+            size: data.size || file.size,
+            url: data.url,
+          };
+        }),
+      );
+      ticketDialog.form.attachments = [...normalizeAttachments(ticketDialog.form.attachments), ...mapped];
+      ElMessage.success("附件上传成功");
+    } catch (err) {
+      ticketDialogAttachmentError.value = getErrorMessage(err, "附件上传失败，请重试");
+      ElMessage.error(ticketDialogAttachmentError.value);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  function removeTicketDialogAttachment(index) {
+    const current = normalizeAttachments(ticketDialog.form.attachments);
+    if (index < 0 || index >= current.length) return;
+    current.splice(index, 1);
+    ticketDialog.form.attachments = current;
   }
 
   async function removeDetailAttachment(index) {
@@ -470,8 +564,11 @@ export function useTicketModule({
     openTicketDetail,
     saveTicketDetailEdit,
     saveTicketQuickEdit,
+    saveTicketAssigneeQuick,
     runTicketFlowAction,
     onDetailProjectChange,
+    onTicketDialogAttachmentChange,
+    removeTicketDialogAttachment,
     onDetailAttachmentChange,
     removeDetailAttachment,
     persistTicketAttachments,

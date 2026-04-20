@@ -117,19 +117,60 @@ export function useTaskflowApp() {
 
   const projectHubTicketViewMode = ref("list");
   const projectHubTicketTypeMode = ref("all");
+  const projectHubFilterExpanded = ref(false);
+  const projectHubTicketFilters = reactive({
+    keyword_field: "title",
+    keyword: "",
+    status: "",
+    related_user_id: null,
+    executor_id: null,
+  });
   const notificationDrawerVisible = ref(false);
   const lastPolledUnreadCount = ref(null);
   const notificationPollTimer = ref(null);
   const notificationPolling = ref(false);
 
   const projectHubFilteredTickets = computed(() => {
-    const list = tickets.value || [];
+    let list = tickets.value || [];
     if (projectHubTicketTypeMode.value === "task") {
-      return list.filter((item) => item.ticket_type === "需求单");
+      list = list.filter((item) => item.ticket_type === "需求单");
+    } else if (projectHubTicketTypeMode.value === "bug") {
+      list = list.filter((item) => item.ticket_type === "BUG单");
     }
-    if (projectHubTicketTypeMode.value === "bug") {
-      return list.filter((item) => item.ticket_type === "BUG单");
+
+    const keyword = String(projectHubTicketFilters.keyword || "").trim().toLowerCase();
+    if (keyword) {
+      if (projectHubTicketFilters.keyword_field === "description") {
+        list = list.filter((item) => String(item.description || "").toLowerCase().includes(keyword));
+      } else {
+        list = list.filter((item) => String(item.title || "").toLowerCase().includes(keyword));
+      }
     }
+
+    if (projectHubTicketFilters.status) {
+      list = list.filter((item) => item.status === projectHubTicketFilters.status);
+    }
+
+    const relatedUserId = Number(projectHubTicketFilters.related_user_id || 0);
+    if (relatedUserId > 0) {
+      list = list.filter((item) => {
+        const assigneeIds = Array.isArray(item.assignees) ? item.assignees.map((x) => Number(x?.id || 0)) : [];
+        return [
+          Number(item.creator_id || 0),
+          Number(item.current_owner_id || 0),
+          Number(item.executor_id || 0),
+          Number(item.planner_id || 0),
+          Number(item.tester_id || 0),
+          ...assigneeIds,
+        ].includes(relatedUserId);
+      });
+    }
+
+    const executorId = Number(projectHubTicketFilters.executor_id || 0);
+    if (executorId > 0) {
+      list = list.filter((item) => Number(item.executor_id || 0) === executorId);
+    }
+
     return list;
   });
 
@@ -160,7 +201,7 @@ export function useTaskflowApp() {
       id: null,
       title: "",
       description: "",
-      module: "",
+      module: "数值",
       ticket_type: "需求单",
       sub_type: "策划需求",
       project_id: null,
@@ -173,6 +214,7 @@ export function useTaskflowApp() {
       related_task_id: null,
       start_time: "",
       end_time: "",
+      attachments: [],
     },
   });
 
@@ -205,6 +247,9 @@ export function useTaskflowApp() {
     },
     quickForm: {
       priority: "中",
+      executor_id: null,
+      planner_id: null,
+      tester_id: null,
     },
     comments: [],
     commentReplies: [],
@@ -245,6 +290,7 @@ export function useTaskflowApp() {
   });
   const wikiAttachmentError = ref("");
   const ticketAttachmentError = ref("");
+  const ticketDialogAttachmentError = ref("");
   const wikiDetail = reactive({
     visible: false,
     article: {},
@@ -424,8 +470,11 @@ export function useTaskflowApp() {
     openTicketDetail,
     saveTicketDetailEdit,
     saveTicketQuickEdit,
+    saveTicketAssigneeQuick,
     runTicketFlowAction,
     onDetailProjectChange,
+    onTicketDialogAttachmentChange,
+    removeTicketDialogAttachment,
     onDetailAttachmentChange,
     removeDetailAttachment,
     persistTicketAttachments,
@@ -444,6 +493,7 @@ export function useTaskflowApp() {
     getErrorMessage,
     ticketDialog,
     ticketDetail,
+    ticketDialogAttachmentError,
     ticketAttachmentError,
     ticketFilter,
     tickets,
@@ -839,6 +889,8 @@ export function useTaskflowApp() {
     notificationFeed,
     projectHubTicketViewMode,
     projectHubTicketTypeMode,
+    projectHubFilterExpanded,
+    projectHubTicketFilters,
     projectHubFilteredTickets,
     kanbanColumns,
     projectHub,
@@ -861,6 +913,7 @@ export function useTaskflowApp() {
     wikiEditorRef,
     wikiDialog,
     wikiAttachmentError,
+    ticketDialogAttachmentError,
     ticketAttachmentError,
     wikiDetail,
     workloadRows,
@@ -1001,8 +1054,11 @@ export function useTaskflowApp() {
     openTicketDetail,
     saveTicketDetailEdit,
     saveTicketQuickEdit,
+    saveTicketAssigneeQuick,
     runTicketFlowAction,
     onDetailProjectChange,
+    onTicketDialogAttachmentChange,
+    removeTicketDialogAttachment,
     onDetailAttachmentChange,
     removeDetailAttachment,
     persistTicketAttachments,

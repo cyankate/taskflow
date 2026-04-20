@@ -105,17 +105,23 @@ def normalize_role_ids(payload: dict[str, Any]) -> dict[str, int | None]:
 
 
 def resolve_initial_flow(ticket_type: str, sub_type: str, role_ids: dict[str, int | None]) -> dict[str, Any]:
+    if ticket_type == "BUG单":
+        return {"status": "待处理", "flow_stage": "execute", "current_owner_id": role_ids.get("executor_id")}
     if ticket_type == "需求单" and sub_type == "测试需求":
-        return {"status": "待处理", "flow_stage": "execute", "current_owner_id": role_ids.get("tester_id")}
+        return {"status": "未开始", "flow_stage": "execute", "current_owner_id": role_ids.get("tester_id")}
     if ticket_type == "需求单" and sub_type == "策划需求":
-        return {"status": "待处理", "flow_stage": "execute", "current_owner_id": role_ids.get("planner_id")}
-    return {"status": "待处理", "flow_stage": "execute", "current_owner_id": role_ids.get("executor_id")}
+        return {"status": "未开始", "flow_stage": "execute", "current_owner_id": role_ids.get("planner_id")}
+    return {"status": "未开始", "flow_stage": "execute", "current_owner_id": role_ids.get("executor_id")}
 
 
 def get_available_flow_actions(ticket: Ticket, user_id: int) -> list[str]:
-    if ticket.status == "已完成" or ticket.current_owner_id != user_id:
+    if ticket.status == "已完成":
+        return ["reopen"] if ticket.tester_id == user_id else []
+    if ticket.current_owner_id != user_id:
         return []
     if ticket.flow_stage == "execute":
+        if ticket.ticket_type == "需求单" and ticket.status in {"未开始", "待处理"}:
+            return ["start"]
         return ["submit"]
     if ticket.flow_stage == "accept":
         return ["approve", "reject"]
@@ -127,9 +133,9 @@ def get_available_flow_actions(ticket: Ticket, user_id: int) -> list[str]:
 
 
 def apply_flow_action(ticket: Ticket, action: str, reject_reason: str = "") -> tuple[bool, str]:
-    if action not in {"submit", "approve", "reject"}:
+    if action not in {"start", "submit", "approve", "reject", "reopen"}:
         return False, "不支持的流转动作"
-    if ticket.status == "已完成":
+    if ticket.status == "已完成" and action != "reopen":
         return False, "已完成工单不能再流转"
 
     executor_id = ticket.executor_id
@@ -138,9 +144,22 @@ def apply_flow_action(ticket: Ticket, action: str, reject_reason: str = "") -> t
     ticket_type = ticket.ticket_type
     sub_type = ticket.sub_type
 
+    if action == "start":
+        if ticket_type != "需求单":
+            return False, "仅需求单支持开始"
+        if ticket.flow_stage != "execute":
+            return False, "当前阶段不支持开始"
+        if ticket.status not in {"未开始", "待处理"}:
+            return False, "当前状态不支持开始"
+        ticket.status = "进行中"
+        ticket.reject_reason = ""
+        return True, ""
+
     if action == "submit":
         if ticket.flow_stage != "execute":
             return False, "当前阶段不支持提交"
+        if ticket_type == "需求单" and ticket.status not in {"进行中", "待处理"}:
+            return False, "请先开始后再提交"
         if ticket_type == "需求单" and sub_type == "测试需求":
             ticket.status = "已完成"
             ticket.flow_stage = "done"
@@ -180,9 +199,27 @@ def apply_flow_action(ticket: Ticket, action: str, reject_reason: str = "") -> t
             return True, ""
         return False, "当前阶段不支持通过"
 
+    if action == "reopen":
+        if ticket.status != "已完成":
+            return False, "仅已完成工单支持重开"
+        ticket.status = "未开始" if ticket_type == "需求单" else "待处理"
+        ticket.flow_stage = "execute"
+        if ticket_type == "需求单" and sub_type == "策划需求":
+            ticket.current_owner_id = planner_id
+        elif ticket_type == "需求单" and sub_type == "测试需求":
+            ticket.current_owner_id = tester_id
+        else:
+            ticket.current_owner_id = executor_id
+        ticket.reject_reason = ""
+        if not ticket.current_owner_id:
+            return False, "流转负责人配置不完整"
+        return True, ""
+
+    if action != "reject":
+        return False, "不支持的流转动作"
     if ticket.flow_stage not in {"accept", "test"}:
         return False, "当前阶段不支持驳回"
-    ticket.status = "待处理"
+    ticket.status = "未开始" if ticket_type == "需求单" else "待处理"
     ticket.flow_stage = "execute"
     if ticket_type == "需求单" and sub_type == "策划需求":
         ticket.current_owner_id = planner_id

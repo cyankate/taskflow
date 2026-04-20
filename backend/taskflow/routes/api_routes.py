@@ -71,6 +71,8 @@ RATE_LIMIT_UPLOAD_COUNT = 20
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_STORE: dict[str, list[float]] = {}
 UPLOAD_API_PREFIX = "/api/uploads/"
+TASK_TICKET_ID_START = 10000
+BUG_TICKET_ID_START = 30000
 
 
 def _log_security_event(event: str, detail: str, level: str = "warning") -> None:
@@ -200,6 +202,16 @@ def _validate_flow_role_users(ticket_type: str, sub_type: str, role_ids: dict[st
     if ticket_type == "需求单" and sub_type == "策划需求":
         if executor_user and executor_user.position != "策划":
             return "策划需求的执行负责人必须是策划岗位"
+    return None
+
+
+def _keyword_ticket_id(keyword: str) -> int | None:
+    """若关键词为纯数字或 #数字，解析为工单 ID，用于列表搜索。"""
+    s = (keyword or "").strip()
+    if s.startswith("#"):
+        s = s[1:].strip()
+    if s.isdigit():
+        return int(s)
     return None
 
 
@@ -642,6 +654,23 @@ def _resolve_console_gateway(gateway_id_raw: Any) -> dict[str, str] | None:
         if str(item["id"]) == gid:
             return item
     return None
+
+
+def _allocate_ticket_id(ticket_type: str) -> int:
+    """
+    需求单 ID: [10000, 29999] 区间内递增
+    BUG 单 ID: [30000, +inf) 区间内递增
+    """
+    if ticket_type == "BUG单":
+        max_bug_id = db.session.query(func.max(Ticket.id)).filter(Ticket.id >= BUG_TICKET_ID_START).scalar()
+        return int(max(max_bug_id or (BUG_TICKET_ID_START - 1), BUG_TICKET_ID_START - 1) + 1)
+
+    max_task_id = (
+        db.session.query(func.max(Ticket.id))
+        .filter(and_(Ticket.id >= TASK_TICKET_ID_START, Ticket.id < BUG_TICKET_ID_START))
+        .scalar()
+    )
+    return int(max(max_task_id or (TASK_TICKET_ID_START - 1), TASK_TICKET_ID_START - 1) + 1)
 
 
 @api_bp.get("/console/skynet/db/tables")
@@ -1088,7 +1117,7 @@ def project_hub() -> Any:
                 **project.to_dict(),
                 "total_tickets": len(project_tickets),
                 "pending_tickets": len(
-                    [ticket for ticket in project_tickets if ticket.status in {"待处理", "待验收", "待测试"}]
+                    [ticket for ticket in project_tickets if ticket.status in {"未开始", "进行中", "待处理", "待验收", "待测试"}]
                 ),
                 "completed_tickets": len([ticket for ticket in project_tickets if ticket.status == "已完成"]),
                 "bug_tickets": len([ticket for ticket in project_tickets if ticket.ticket_type == "BUG单"]),
@@ -1137,7 +1166,7 @@ def project_hub() -> Any:
             "summary": {
                 "total_tickets": len(selected_tickets),
                 "pending_tickets": len(
-                    [ticket for ticket in selected_tickets if ticket.status in {"待处理", "待验收", "待测试"}]
+                    [ticket for ticket in selected_tickets if ticket.status in {"未开始", "进行中", "待处理", "待验收", "待测试"}]
                 ),
                 "completed_tickets": len([ticket for ticket in selected_tickets if ticket.status == "已完成"]),
                 "bug_tickets": len([ticket for ticket in selected_tickets if ticket.ticket_type == "BUG单"]),
@@ -1191,15 +1220,17 @@ def list_tickets() -> Any:
         query = query.filter(Ticket.end_time <= parse_iso(end_to))
     if keyword:
         like_keyword = f"%{keyword}%"
-        query = query.filter(
-            or_(
-                Ticket.title.ilike(like_keyword),
-                Ticket.description.ilike(like_keyword),
-                Ticket.module.ilike(like_keyword),
-                Ticket.sub_type.ilike(like_keyword),
-                Ticket.ticket_type.ilike(like_keyword),
-            )
-        )
+        keyword_conditions = [
+            Ticket.title.ilike(like_keyword),
+            Ticket.description.ilike(like_keyword),
+            Ticket.module.ilike(like_keyword),
+            Ticket.sub_type.ilike(like_keyword),
+            Ticket.ticket_type.ilike(like_keyword),
+        ]
+        tid = _keyword_ticket_id(keyword)
+        if tid is not None:
+            keyword_conditions.append(Ticket.id == tid)
+        query = query.filter(or_(*keyword_conditions))
 
     view_mode = (request.args.get("view_mode") or "").strip()
     if view_mode == "current":
@@ -1274,6 +1305,7 @@ def create_ticket() -> Any:
         return jsonify({"message": "流转负责人配置不完整"}), 400
 
     ticket = Ticket(
+        id=_allocate_ticket_id(payload["ticket_type"]),
         title=payload["title"].strip(),
         description=payload.get("description", "").strip(),
         module=payload["module"].strip(),
@@ -1326,6 +1358,9 @@ def update_ticket(ticket_id: int) -> Any:
         return jsonify({"message": "工单不存在"}), 404
 
     payload = request.get_json(silent=True) or {}
+    if "priority" in payload and payload.get("priority") != ticket.priority:
+        if request.current_user.id not in {ticket.creator_id, ticket.tester_id}:
+            return jsonify({"message": "仅测试负责人或创建人可修改优先级"}), 403
     if payload.get("attachments"):
         passed, limited_response = _enforce_rate_limit("ticket_upload", RATE_LIMIT_UPLOAD_COUNT)
         if not passed:
@@ -1593,6 +1628,12 @@ def submit_ticket_flow(ticket_id: int) -> Any:
     return _handle_ticket_flow_action(ticket_id, "submit")
 
 
+@api_bp.post("/tickets/<int:ticket_id>/flow/start")
+@auth_required()
+def start_ticket_flow(ticket_id: int) -> Any:
+    return _handle_ticket_flow_action(ticket_id, "start")
+
+
 @api_bp.post("/tickets/<int:ticket_id>/flow/approve")
 @auth_required()
 def approve_ticket_flow(ticket_id: int) -> Any:
@@ -1606,16 +1647,28 @@ def reject_ticket_flow(ticket_id: int) -> Any:
     return _handle_ticket_flow_action(ticket_id, "reject", payload.get("reason", ""))
 
 
+@api_bp.post("/tickets/<int:ticket_id>/flow/reopen")
+@auth_required()
+def reopen_ticket_flow(ticket_id: int) -> Any:
+    return _handle_ticket_flow_action(ticket_id, "reopen")
+
+
 def _handle_ticket_flow_action(ticket_id: int, action: str, reject_reason: str = "") -> Any:
     ticket = db.session.get(Ticket, ticket_id)
     if not ticket:
         return jsonify({"message": "工单不存在"}), 404
-    if ticket.current_owner_id != request.current_user.id:
-        return jsonify({"message": "当前工单不在你的处理节点"}), 403
+    if action == "reopen":
+        if ticket.status != "已完成":
+            return jsonify({"message": "仅已完成工单支持重开"}), 400
+        if request.current_user.id != ticket.tester_id:
+            return jsonify({"message": "仅测试负责人可重开工单"}), 403
+    else:
+        if ticket.current_owner_id != request.current_user.id:
+            return jsonify({"message": "当前工单不在你的处理节点"}), 403
     ok, message = apply_flow_action(ticket, action, reject_reason=reject_reason)
     if not ok:
         return jsonify({"message": message}), 400
-    action_text = {"submit": "提交", "approve": "通过", "reject": "驳回"}.get(action, action)
+    action_text = {"start": "开始", "submit": "提交", "approve": "通过", "reject": "驳回", "reopen": "重开"}.get(action, action)
     summary = f"{action_text}工单，状态变更为{ticket.status}"
     if action == "reject" and ticket.reject_reason:
         summary += f"（原因：{ticket.reject_reason}）"
@@ -1961,7 +2014,7 @@ def dashboard() -> Any:
             or any(assignee.id == user.id for assignee in ticket.assignees)
         ):
             my_related_tickets.append(ticket)
-    pending_status = {"待处理", "待验收", "待测试"}
+    pending_status = {"未开始", "进行中", "待处理", "待验收", "待测试"}
     my_current = [ticket.to_dict() for ticket in my_tickets if ticket.current_owner_id == user.id and ticket.status in pending_status]
     my_created = [ticket.to_dict() for ticket in my_tickets if ticket.creator_id == user.id and ticket.status in pending_status]
     my_related = [ticket.to_dict() for ticket in my_related_tickets]
@@ -2041,7 +2094,7 @@ def statistics() -> Any:
         [
             ticket
             for ticket in all_tickets
-            if ticket.status in {"待处理", "待验收", "待测试"} and _to_utc_naive(ticket.end_time) < now
+            if ticket.status in {"未开始", "进行中", "待处理", "待验收", "待测试"} and _to_utc_naive(ticket.end_time) < now
         ]
     )
 
@@ -2164,12 +2217,12 @@ def notifications() -> Any:
     overdue_items = [
         ticket
         for ticket in tickets
-        if ticket.status in {"待处理", "待验收", "待测试"} and _to_utc_naive(ticket.end_time) < now
+        if ticket.status in {"未开始", "进行中", "待处理", "待验收", "待测试"} and _to_utc_naive(ticket.end_time) < now
     ]
     soon_due_items = [
         ticket
         for ticket in tickets
-        if ticket.status in {"待处理", "待验收", "待测试"} and now <= _to_utc_naive(ticket.end_time) <= soon
+        if ticket.status in {"未开始", "进行中", "待处理", "待验收", "待测试"} and now <= _to_utc_naive(ticket.end_time) <= soon
     ]
 
     unread_notification_count = (

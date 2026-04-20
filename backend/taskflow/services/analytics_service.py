@@ -9,7 +9,7 @@ from taskflow.constants import POSITIONS
 from taskflow.models import Ticket, User
 from taskflow.utils.datetime_utils import now_utc
 
-IN_PROGRESS_STATUS = {"待处理", "待验收", "待测试"}
+IN_PROGRESS_STATUS = {"未开始", "进行中", "待处理", "待验收", "待测试"}
 RISK_SOON_HOURS = 48
 RISK_STALLED_HOURS = 72
 PRIORITY_WEIGHT = {"低": 1.0, "中": 1.5, "高": 2.0, "紧急": 3.0}

@@ -31,7 +31,7 @@
         <div class="topbar-middle">
           <el-input
             v-model="globalSearchKeyword"
-            placeholder="搜索标题、描述、模块"
+            placeholder="搜索标题、描述、模块、工单号"
             clearable
             class="global-search-input"
             @keyup.enter="runTopbarSearch"
@@ -41,8 +41,10 @@
               <el-button @click="runTopbarSearch">搜索</el-button>
             </template>
           </el-input>
-          <el-button type="primary" plain @click="createQuickTicket('需求单')">创建任务</el-button>
-          <el-button type="danger" plain @click="createQuickTicket('BUG单')">创建BUG</el-button>
+          <div class="topbar-create-pair">
+            <el-button type="primary" plain @click="createQuickTicket('需求单')">创建任务</el-button>
+            <el-button type="danger" plain @click="createQuickTicket('BUG单')">创建BUG</el-button>
+          </div>
         </div>
 
         <div class="topbar-right">
@@ -111,7 +113,7 @@
           </div>
           <button class="side-nav-item" :class="{ active: activeTab === 'project_hub' }" @click="handleSideNavClick('project_hub')">
             <span class="side-nav-icon">◫</span>
-            <span>项目栏</span>
+            <span>项目</span>
           </button>
           <button class="side-nav-item" :class="{ active: activeTab === 'wiki' }" @click="handleSideNavClick('wiki')">
             <span class="side-nav-icon">▤</span>
@@ -175,13 +177,14 @@
                   </div>
                 </template>
                 <el-table
-                  :data="pagedDashboardTasks"
+                  :data="sortedPagedDashboardTasks"
                   stripe
                   max-height="390"
                   class="clickable-ticket-table dashboard-main-table"
+                  @sort-change="onDashboardTaskSortChange"
                   @row-click="handleTicketRowClick"
                 >
-                  <el-table-column label="标题" min-width="270" show-overflow-tooltip>
+                  <el-table-column label="标题" prop="id" sortable="custom" min-width="300">
                     <template #default="scope">
                       <div class="dashboard-title-cell" :class="{ 'is-child-task': isChildTask(scope.row) }">
                         <span
@@ -194,11 +197,12 @@
                         >
                           {{ getTaskRelationRole(scope.row) === "parent" ? "父" : "子" }}
                         </span>
-                        <span class="dashboard-type-dot task">{{ getTaskTypeDotText(scope.row) }}</span>
+                        <span class="dashboard-type-dot task dashboard-ticket-id-dot" @click.stop="copyTicketId(scope.row.id)">
+                          {{ scope.row.id || "-" }}
+                        </span>
                         <div class="dashboard-title-main">
                           <div class="dashboard-title-line">
-                            <span class="dashboard-ticket-id" @click.stop="copyTicketId(scope.row.id)">#{{ scope.row.id }}</span>
-                            <span>{{ scope.row.title }}</span>
+                            <span class="dashboard-title-text">{{ scope.row.title }}</span>
                           </div>
                           <div v-if="getTaskRelationText(scope.row)" class="dashboard-task-relation">
                             {{ getTaskRelationText(scope.row) }}
@@ -207,7 +211,7 @@
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="状态" width="138">
+                  <el-table-column label="状态" prop="status" sortable="custom" width="92" align="center">
                     <template #default="scope">
                       <el-tag size="small" effect="light" :type="getDashboardStatusTagType(scope.row.status)">
                         {{ scope.row.status }}
@@ -217,7 +221,7 @@
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="优先级" width="102">
+                  <el-table-column label="优先级" prop="priority" sortable="custom" width="87" align="center">
                     <template #default="scope">
                       <span class="dashboard-priority-chip">
                         <span :class="['dashboard-priority-dot', getDashboardPriorityDotClass(scope.row.priority)]"></span>
@@ -225,7 +229,7 @@
                       </span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="负责人" width="126">
+                  <el-table-column label="负责人" width="88">
                     <template #default="scope">
                       <div class="dashboard-owner-cell">
                         <span class="dashboard-owner-avatar">{{ getDashboardOwnerInitial(scope.row) }}</span>
@@ -233,7 +237,7 @@
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="截止" width="140">
+                  <el-table-column label="截止" prop="end_time" sortable="custom" width="140">
                     <template #default="scope">
                       <div class="dashboard-deadline-cell">
                         <div>{{ formatDeadlineSlot(scope.row.end_time) }}</div>
@@ -284,26 +288,28 @@
                   </div>
                 </template>
                 <el-table
-                  :data="pagedDashboardBugs"
+                  :data="sortedPagedDashboardBugs"
                   stripe
                   max-height="460"
                   class="clickable-ticket-table dashboard-main-table"
+                  @sort-change="onDashboardBugSortChange"
                   @row-click="handleTicketRowClick"
                 >
-                  <el-table-column label="标题" min-width="270" show-overflow-tooltip>
+                  <el-table-column label="标题" prop="id" sortable="custom" min-width="360">
                     <template #default="scope">
                       <div class="dashboard-title-cell">
-                        <span class="dashboard-type-dot bug">{{ getBugTypeDotText(scope.row) }}</span>
+                        <span class="dashboard-type-dot bug dashboard-ticket-id-dot" @click.stop="copyTicketId(scope.row.id)">
+                          {{ scope.row.id || "-" }}
+                        </span>
                         <div class="dashboard-title-main">
                           <div class="dashboard-title-line">
-                            <span class="dashboard-ticket-id" @click.stop="copyTicketId(scope.row.id)">#{{ scope.row.id }}</span>
-                            <span>{{ scope.row.title }}</span>
+                            <span class="dashboard-title-text">{{ scope.row.title }}</span>
                           </div>
                         </div>
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="状态" width="138">
+                  <el-table-column label="状态" prop="status" sortable="custom" width="92" align="center">
                     <template #default="scope">
                       <el-tag size="small" effect="light" :type="getDashboardStatusTagType(scope.row.status)">
                         {{ scope.row.status }}
@@ -313,7 +319,7 @@
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="优先级" width="102">
+                  <el-table-column label="优先级" prop="priority" sortable="custom" width="87" align="center">
                     <template #default="scope">
                       <span class="dashboard-priority-chip">
                         <span :class="['dashboard-priority-dot', getDashboardPriorityDotClass(scope.row.priority)]"></span>
@@ -321,7 +327,7 @@
                       </span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="负责人" width="126">
+                  <el-table-column label="负责人" width="88">
                     <template #default="scope">
                       <div class="dashboard-owner-cell">
                         <span class="dashboard-owner-avatar">{{ getDashboardOwnerInitial(scope.row) }}</span>
@@ -329,7 +335,7 @@
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="截止" width="140">
+                  <el-table-column label="截止" prop="end_time" sortable="custom" width="140">
                     <template #default="scope">
                       <div class="dashboard-deadline-cell">
                         <div>{{ formatDeadlineSlot(scope.row.end_time) }}</div>
@@ -355,7 +361,13 @@
                 <el-descriptions :column="2" border size="small">
                   <el-descriptions-item label="总工单">{{ dashboard.ticket_count || 0 }}</el-descriptions-item>
                   <el-descriptions-item label="进行中">
-                    {{ (dashboard.by_status?.["待处理"] || 0) + (dashboard.by_status?.["待验收"] || 0) + (dashboard.by_status?.["待测试"] || 0) }}
+                    {{
+                      (dashboard.by_status?.["未开始"] || 0) +
+                      (dashboard.by_status?.["进行中"] || 0) +
+                      (dashboard.by_status?.["待处理"] || 0) +
+                      (dashboard.by_status?.["待验收"] || 0) +
+                      (dashboard.by_status?.["待测试"] || 0)
+                    }}
                   </el-descriptions-item>
                 </el-descriptions>
                 <el-table
@@ -420,17 +432,17 @@
                 <template #header>
                   <div class="project-hub-card-head project-hub-tickets-head">
                     <span class="dashboard-panel-title">工单</span>
-                    <el-radio-group
-                      :model-value="projectHubTicketTypeMode"
-                      size="small"
-                      class="project-hub-type-toggle"
-                      @update:model-value="onProjectHubTicketTypeChange"
-                    >
-                      <el-radio-button label="all" value="all">全部</el-radio-button>
-                      <el-radio-button label="task" value="task">需求</el-radio-button>
-                      <el-radio-button label="bug" value="bug">BUG</el-radio-button>
-                    </el-radio-group>
                     <span class="project-hub-muted">共 {{ projectHubFilteredTickets.length }} 条</span>
+                    <button
+                      type="button"
+                      class="project-view-icon-btn"
+                      :class="{ active: projectHubFilterExpanded, 'has-active-filter': projectHubFiltersActive }"
+                      title="筛选条件"
+                      @click="toggleProjectHubFilters"
+                    >
+                      <el-icon aria-hidden="true"><Filter /></el-icon>
+                      <span v-if="projectHubFiltersActive" class="project-filter-active-dot"></span>
+                    </button>
                     <div class="project-hub-view-icons">
                       <button
                         type="button"
@@ -457,38 +469,58 @@
                   <span>{{ searchResultTip }}</span>
                   <button class="ticket-search-clear-btn" title="清除搜索" @click="clearTopbarSearch">×</button>
                 </div>
-                <div class="ticket-batch-bar">
-                  <span class="ticket-batch-label">已选 {{ selectedTicketIds.length }} 条</span>
-                  <el-select v-model="batchEdit.priority" clearable placeholder="批量优先级" class="ticket-batch-select">
-                    <el-option v-for="item in meta.priorities" :key="item" :label="item" :value="item" />
-                  </el-select>
-                  <el-select
-                    v-model="batchEdit.assignee_ids"
-                    multiple
-                    clearable
-                    collapse-tags
-                    collapse-tags-tooltip
-                    placeholder="批量负责人"
-                    class="ticket-batch-select assignee"
-                  >
-                    <el-option
-                      v-for="item in users"
-                      :key="item.id"
-                      :label="item.display_name || item.username"
-                      :value="item.id"
-                    />
-                  </el-select>
-                  <el-button type="primary" plain :disabled="!selectedTicketIds.length" @click="submitBatchEdit">批量应用</el-button>
+                <div v-if="projectHubFilterExpanded" class="project-hub-filter-panel">
+                  <el-form label-width="72px" class="project-hub-filter-form">
+                    <el-form-item label="关键词">
+                      <div class="project-hub-filter-keyword">
+                        <el-select v-model="projectHubTicketFilters.keyword_field" class="project-hub-filter-keyword-field" @change="onProjectHubFilterChange">
+                          <el-option label="标题" value="title" />
+                          <el-option label="描述" value="description" />
+                        </el-select>
+                        <el-input
+                          v-model="projectHubTicketFilters.keyword"
+                          clearable
+                          placeholder="输入关键词"
+                          class="project-hub-filter-keyword-input"
+                          @input="onProjectHubFilterChange"
+                          @clear="onProjectHubFilterChange"
+                        />
+                      </div>
+                    </el-form-item>
+                    <el-form-item label="状态">
+                      <el-select v-model="projectHubTicketFilters.status" clearable placeholder="全部状态" class="project-hub-filter-item" @change="onProjectHubFilterChange">
+                        <el-option v-for="item in meta.ticket_status" :key="`project-hub-status-${item}`" :label="item" :value="item" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="相关人员">
+                      <el-select v-model="projectHubTicketFilters.related_user_id" clearable filterable placeholder="全部人员" class="project-hub-filter-item" @change="onProjectHubFilterChange">
+                        <el-option v-for="item in users" :key="`project-hub-related-${item.id}`" :label="item.display_name || item.username" :value="item.id" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="执行人">
+                      <el-select v-model="projectHubTicketFilters.executor_id" clearable filterable placeholder="全部执行人" class="project-hub-filter-item" @change="onProjectHubFilterChange">
+                        <el-option v-for="item in users" :key="`project-hub-executor-${item.id}`" :label="item.display_name || item.username" :value="item.id" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="类型">
+                      <el-select v-model="projectHubTicketTypeMode" class="project-hub-filter-item" @change="onProjectHubFilterChange">
+                        <el-option label="全部" value="all" />
+                        <el-option label="需求" value="task" />
+                        <el-option label="BUG" value="bug" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item>
+                      <el-button size="small" @click="resetProjectHubFilters">重置筛选</el-button>
+                    </el-form-item>
+                  </el-form>
                 </div>
                 <div v-show="projectHubTicketViewMode === 'list'" class="table-scroll-inner">
                   <el-table
                     :data="pagedTickets"
                     stripe
-                    class="clickable-ticket-table dashboard-main-table"
-                    @selection-change="onProjectHubSelectionChange"
+                    class="clickable-ticket-table project-hub-ticket-table"
                     @row-click="handleTicketRowClick"
                   >
-                    <el-table-column type="selection" width="44" />
                     <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
                     <el-table-column prop="ticket_type" label="类型" width="88" />
                     <el-table-column label="状态" width="150">
@@ -1282,13 +1314,13 @@
           <section v-else key="content-detail" class="ticket-detail-page">
             <div class="ticket-detail-head">
               <h3 class="ticket-detail-title">
-                <span class="ticket-title-id">#{{ ticketDetail.ticket.id || "-" }}</span>
                 <span
                   class="ticket-type-art"
                   :class="ticketDetail.ticket.ticket_type === 'BUG单' ? 'bug' : 'demand'"
                 >
                   {{ ticketDetail.ticket.ticket_type || "需求单" }}
                 </span>
+                <span class="ticket-title-id">#{{ ticketDetail.ticket.id || "-" }}</span>
                 <span class="ticket-title-text">{{ ticketDetail.ticket.title }}</span>
               </h3>
               <div class="ticket-detail-actions">
@@ -1301,31 +1333,6 @@
                 </el-button>
                 <el-button size="small" type="primary" plain @click="toggleTicketFollow">
                   {{ ticketDetail.ticket.is_following ? "取消关注" : "关注工单" }}
-                </el-button>
-                <el-button
-                  v-if="(ticketDetail.ticket.available_actions || []).includes('submit')"
-                  size="small"
-                  type="success"
-                  @click="onTicketFlowAction('submit')"
-                >
-                  提交
-                </el-button>
-                <el-button
-                  v-if="(ticketDetail.ticket.available_actions || []).includes('approve')"
-                  size="small"
-                  type="success"
-                  @click="onTicketFlowAction('approve')"
-                >
-                  通过
-                </el-button>
-                <el-button
-                  v-if="(ticketDetail.ticket.available_actions || []).includes('reject')"
-                  size="small"
-                  type="danger"
-                  plain
-                  @click="onTicketFlowAction('reject')"
-                >
-                  驳回
                 </el-button>
                 <el-button size="small" @click="ticketDetail.editing = !ticketDetail.editing">
                   {{ ticketDetail.editing ? "取消编辑" : "编辑工单" }}
@@ -1612,7 +1619,7 @@
                     <el-select v-model="ticketDetail.editForm.version_id" class="w140 ml8" placeholder="版本">
                       <el-option v-for="item in versions" :key="item.id" :label="item.name" :value="item.id" />
                     </el-select>
-                    <el-select v-model="ticketDetail.editForm.priority" class="w140 ml8">
+                    <el-select v-model="ticketDetail.editForm.priority" class="w140 ml8" :disabled="!canEditTicketPriority(ticketDetail.ticket)">
                       <el-option v-for="item in meta.priorities" :key="item" :label="item" :value="item" />
                     </el-select>
                   </el-form-item>
@@ -1792,6 +1799,64 @@
               </div>
 
               <aside class="ticket-detail-side">
+                <div
+                  v-if="
+                    (ticketDetail.ticket.available_actions || []).includes('start') ||
+                    (ticketDetail.ticket.available_actions || []).includes('submit') ||
+                    (ticketDetail.ticket.available_actions || []).includes('approve') ||
+                    (ticketDetail.ticket.available_actions || []).includes('reject') ||
+                    (ticketDetail.ticket.available_actions || []).includes('reopen')
+                  "
+                  class="detail-side-block ticket-flow-actions"
+                >
+                  <div class="ticket-flow-actions-row">
+                    <el-button
+                      v-if="(ticketDetail.ticket.available_actions || []).includes('start')"
+                      size="default"
+                      type="primary"
+                      plain
+                      @click="onTicketFlowAction('start')"
+                    >
+                      开始
+                    </el-button>
+                    <el-button
+                      v-if="(ticketDetail.ticket.available_actions || []).includes('submit')"
+                      size="default"
+                      type="success"
+                      plain
+                      @click="onTicketFlowAction('submit')"
+                    >
+                      提交
+                    </el-button>
+                    <el-button
+                      v-if="(ticketDetail.ticket.available_actions || []).includes('approve')"
+                      size="default"
+                      type="success"
+                      plain
+                      @click="onTicketFlowAction('approve')"
+                    >
+                      通过
+                    </el-button>
+                    <el-button
+                      v-if="(ticketDetail.ticket.available_actions || []).includes('reject')"
+                      size="default"
+                      type="danger"
+                      plain
+                      @click="onTicketFlowAction('reject')"
+                    >
+                      驳回
+                    </el-button>
+                    <el-button
+                      v-if="(ticketDetail.ticket.available_actions || []).includes('reopen')"
+                      size="default"
+                      type="warning"
+                      plain
+                      @click="onTicketFlowAction('reopen')"
+                    >
+                      重开
+                    </el-button>
+                  </div>
+                </div>
                 <div class="detail-side-block">
                   <div class="ticket-quick-edit">
                     <div class="ticket-quick-row">
@@ -1814,7 +1879,8 @@
                       <el-select
                         v-model="ticketDetail.quickForm.priority"
                         size="small"
-                        :class="['ticket-quick-item', getPriorityToneClass(ticketDetail.quickForm.priority)]"
+                        :class="['ticket-quick-item', 'ticket-quick-priority', getPriorityToneClass(ticketDetail.quickForm.priority)]"
+                        :disabled="!canEditTicketPriority(ticketDetail.ticket)"
                         popper-class="quick-select-popper"
                         @change="saveTicketQuickEdit"
                       >
@@ -1866,19 +1932,77 @@
                   <div class="ticket-flow-role-list">
                     <div class="ticket-flow-role-item">
                       <span class="ticket-assignee-position">执行</span>
-                      <span class="ticket-assignee-members">{{ ticketDetail.ticket.executor_name || "-" }}</span>
+                      <el-select
+                        v-model="ticketDetail.quickForm.executor_id"
+                        size="small"
+                        clearable
+                        filterable
+                        class="ticket-role-select"
+                        popper-class="role-select-popper"
+                        placeholder="请选择执行人"
+                        @change="saveTicketAssigneeQuick"
+                      >
+                        <el-option
+                          v-for="item in getExecutorCandidates(ticketDetail.ticket.ticket_type, ticketDetail.ticket.sub_type)"
+                          :key="`detail-executor-${item.id}`"
+                          :label="item.display_name || item.username"
+                          :value="item.id"
+                        />
+                      </el-select>
                     </div>
                     <div class="ticket-flow-role-item">
                       <span class="ticket-assignee-position">策划</span>
-                      <span class="ticket-assignee-members">{{ ticketDetail.ticket.planner_name || "-" }}</span>
+                      <el-select
+                        v-model="ticketDetail.quickForm.planner_id"
+                        size="small"
+                        clearable
+                        filterable
+                        class="ticket-role-select"
+                        popper-class="role-select-popper"
+                        placeholder="请选择策划"
+                        @change="saveTicketAssigneeQuick"
+                      >
+                        <el-option
+                          v-for="item in users.filter((x) => x.position === '策划')"
+                          :key="`detail-planner-${item.id}`"
+                          :label="item.display_name || item.username"
+                          :value="item.id"
+                        />
+                      </el-select>
                     </div>
                     <div class="ticket-flow-role-item">
                       <span class="ticket-assignee-position">测试</span>
-                      <span class="ticket-assignee-members">{{ ticketDetail.ticket.tester_name || "-" }}</span>
+                      <el-select
+                        v-model="ticketDetail.quickForm.tester_id"
+                        size="small"
+                        clearable
+                        filterable
+                        class="ticket-role-select"
+                        popper-class="role-select-popper"
+                        placeholder="请选择测试"
+                        @change="saveTicketAssigneeQuick"
+                      >
+                        <el-option
+                          v-for="item in users.filter((x) => x.position === '测试')"
+                          :key="`detail-tester-${item.id}`"
+                          :label="item.display_name || item.username"
+                          :value="item.id"
+                        />
+                      </el-select>
                     </div>
                     <div class="ticket-flow-role-item">
                       <span class="ticket-assignee-position">当前处理人</span>
-                      <span class="ticket-assignee-members">{{ ticketDetail.ticket.current_owner_name || "-" }}</span>
+                      <div class="ticket-current-owner-wrap">
+                        <el-tag
+                          v-if="ticketDetail.ticket.current_owner_name"
+                          size="small"
+                          effect="light"
+                          class="ticket-current-owner-tag"
+                        >
+                          {{ ticketDetail.ticket.current_owner_name }}
+                        </el-tag>
+                        <span v-else class="ticket-assignee-members">-</span>
+                      </div>
                     </div>
                   </div>
                   <div class="ticket-watcher-line">
@@ -1940,8 +2064,28 @@
     <el-dialog v-model="ticketDialog.visible" :title="ticketDialog.form.id ? '编辑工单' : '新建工单'" width="760px">
       <el-form :model="ticketDialog.form" label-width="100px">
         <el-form-item label="标题"><el-input v-model="ticketDialog.form.title" /></el-form-item>
-        <el-form-item label="描述"><el-input v-model="ticketDialog.form.description" type="textarea" /></el-form-item>
-        <el-form-item label="模块"><el-input v-model="ticketDialog.form.module" /></el-form-item>
+        <el-form-item label="描述">
+          <div class="ticket-dialog-editor-wrap">
+            <div class="ticket-dialog-editor-toolbar">
+              <el-button size="small" text @click="applyTicketDialogCommand('bold')">加粗</el-button>
+              <el-button size="small" text @click="applyTicketDialogCommand('insertOrderedList')">有序列表</el-button>
+              <el-button size="small" text @click="applyTicketDialogCommand('insertUnorderedList')">无序列表</el-button>
+              <el-button size="small" text @click="insertTicketDialogLink">链接</el-button>
+              <el-button size="small" text @click="applyTicketDialogCommand('removeFormat')">清除格式</el-button>
+            </div>
+            <div
+              ref="ticketDialogEditorRef"
+              class="ticket-dialog-editor-content rich-text-content"
+              contenteditable="true"
+              @input="onTicketDialogEditorInput"
+            ></div>
+          </div>
+        </el-form-item>
+        <el-form-item label="模块">
+          <el-select v-model="ticketDialog.form.module" placeholder="请选择模块" style="width: 100%">
+            <el-option v-for="item in TICKET_MODULE_OPTIONS" :key="`ticket-module-${item}`" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="ticketDialog.form.ticket_type" class="w140" @change="onTicketDialogTypeChange">
             <el-option v-for="item in meta.ticket_types" :key="item" :label="item" :value="item" />
@@ -2035,7 +2179,7 @@
           <el-select v-model="ticketDialog.form.version_id" class="w140 ml8" placeholder="版本">
             <el-option v-for="item in versions" :key="item.id" :label="item.name" :value="item.id" />
           </el-select>
-          <el-select v-model="ticketDialog.form.priority" class="w140 ml8">
+          <el-select v-model="ticketDialog.form.priority" class="w140 ml8" :disabled="ticketDialog.form.id && !canEditTicketPriority(ticketDialog.form)">
             <el-option v-for="item in meta.priorities" :key="item" :label="item" :value="item" />
           </el-select>
         </el-form-item>
@@ -2053,6 +2197,20 @@
             placeholder="结束时间"
             class="ml8"
           />
+        </el-form-item>
+        <el-form-item label="附件">
+          <label class="upload-btn">
+            添加附件
+            <input type="file" multiple accept="image/*,video/*" class="hidden-file-input" @change="onTicketDialogAttachmentChange" />
+          </label>
+          <span class="attachment-tip">支持图片、视频，单文件不超过 20MB</span>
+          <div v-if="ticketDialogAttachmentError" class="attachment-error-tip">{{ ticketDialogAttachmentError }}</div>
+          <div v-if="(ticketDialog.form.attachments || []).length > 0" class="wiki-attachment-list">
+            <div v-for="(item, idx) in ticketDialog.form.attachments" :key="`${item.url}-${idx}`" class="wiki-attachment-item">
+              <a :href="item.url" target="_blank" rel="noreferrer">{{ item.name || `附件${idx + 1}` }}</a>
+              <el-button link type="danger" @click="removeTicketDialogAttachment(idx)">删除</el-button>
+            </div>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -2207,8 +2365,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
+import { Filter } from "@element-plus/icons-vue";
 import { useTaskflowApp } from "./composables/useTaskflowApp";
 
 const {
@@ -2231,6 +2390,8 @@ const {
   notificationFeed,
   projectHubTicketViewMode,
   projectHubTicketTypeMode,
+  projectHubFilterExpanded,
+  projectHubTicketFilters,
   projectHubFilteredTickets,
   kanbanColumns,
   openNotificationCenter,
@@ -2246,8 +2407,6 @@ const {
   projectDialog,
   ticketDialog,
   ticketDetail,
-  selectedTicketIds,
-  batchEdit,
   imagePreview,
   wikiCategories,
   wikiArticles,
@@ -2257,6 +2416,7 @@ const {
   wikiEditorRef,
   wikiDialog,
   wikiAttachmentError,
+  ticketDialogAttachmentError,
   ticketAttachmentError,
   wikiDetail,
   consoleStatus,
@@ -2314,8 +2474,6 @@ const {
   dashboardBugPageSize,
   dashboardTasks,
   dashboardBugs,
-  pagedDashboardTasks,
-  pagedDashboardBugs,
   ticketPage,
   ticketPageSize,
   projectDynamicsPage,
@@ -2371,8 +2529,11 @@ const {
   saveTicketDetailEdit,
   saveTicketDescription,
   saveTicketQuickEdit,
+  saveTicketAssigneeQuick,
   runTicketFlowAction,
   onDetailProjectChange,
+  onTicketDialogAttachmentChange,
+  removeTicketDialogAttachment,
   onDetailAttachmentChange,
   removeDetailAttachment,
   addComment,
@@ -2380,8 +2541,6 @@ const {
   addCommentReply,
   createSubTaskFromDetail,
   createBugFromDetail,
-  onProjectHubSelectionChange,
-  submitBatchEdit,
   onCommentMentionIdsChange,
   onReplyMentionIdsChange,
   expandCommentComposer,
@@ -2394,13 +2553,91 @@ const {
 } = useTaskflowApp();
 
 const descriptionEditorRef = ref(null);
+const ticketDialogEditorRef = ref(null);
+const TICKET_MODULE_OPTIONS = ["数值", "业务功能", "系统构建", "工具开发", "美术资源", "界面优化", "战斗"];
+const DASHBOARD_STATUS_SORT_ORDER = {
+  未开始: 0,
+  进行中: 1,
+  待处理: 2,
+  待验收: 3,
+  待测试: 4,
+  已完成: 5,
+};
+const DASHBOARD_PRIORITY_SORT_ORDER = {
+  低: 0,
+  中: 1,
+  高: 2,
+  紧急: 3,
+};
+const dashboardTaskSort = reactive({ prop: "", order: "" });
+const dashboardBugSort = reactive({ prop: "", order: "" });
 const dashboardTaskIdSet = computed(() => new Set((dashboardTasks.value || []).map((item) => item.id)));
+const sortedDashboardTasks = computed(() => sortDashboardTickets(dashboardTasks.value || [], dashboardTaskSort));
+const sortedDashboardBugs = computed(() => sortDashboardTickets(dashboardBugs.value || [], dashboardBugSort));
+const sortedPagedDashboardTasks = computed(() => {
+  const start = (dashboardTaskPage.value - 1) * dashboardTaskPageSize;
+  return sortedDashboardTasks.value.slice(start, start + dashboardTaskPageSize);
+});
+const sortedPagedDashboardBugs = computed(() => {
+  const start = (dashboardBugPage.value - 1) * dashboardBugPageSize;
+  return sortedDashboardBugs.value.slice(start, start + dashboardBugPageSize);
+});
 const hasTaskHierarchyInView = computed(() =>
   (dashboardTasks.value || []).some((item) => {
     const parentId = Number(item?.parent_task_id || 0);
     return parentId > 0 && dashboardTaskIdSet.value.has(parentId);
   }),
 );
+
+function parseSortableTime(value) {
+  if (!value) return Number.NEGATIVE_INFINITY;
+  const ts = new Date(value).getTime();
+  return Number.isNaN(ts) ? Number.NEGATIVE_INFINITY : ts;
+}
+
+function compareDashboardTicketByProp(a, b, prop) {
+  if (prop === "id") return Number(a?.id || 0) - Number(b?.id || 0);
+  if (prop === "status") {
+    const av = DASHBOARD_STATUS_SORT_ORDER[String(a?.status || "")] ?? 999;
+    const bv = DASHBOARD_STATUS_SORT_ORDER[String(b?.status || "")] ?? 999;
+    if (av !== bv) return av - bv;
+    return Number(a?.id || 0) - Number(b?.id || 0);
+  }
+  if (prop === "priority") {
+    const av = DASHBOARD_PRIORITY_SORT_ORDER[String(a?.priority || "")] ?? 999;
+    const bv = DASHBOARD_PRIORITY_SORT_ORDER[String(b?.priority || "")] ?? 999;
+    if (av !== bv) return av - bv;
+    return Number(a?.id || 0) - Number(b?.id || 0);
+  }
+  if (prop === "end_time") {
+    const av = parseSortableTime(a?.end_time);
+    const bv = parseSortableTime(b?.end_time);
+    if (av !== bv) return av - bv;
+    return Number(a?.id || 0) - Number(b?.id || 0);
+  }
+  return 0;
+}
+
+function sortDashboardTickets(list, sortState) {
+  const items = Array.isArray(list) ? [...list] : [];
+  const prop = sortState?.prop || "";
+  const order = sortState?.order || "";
+  if (!prop || !order) return items;
+  const factor = order === "ascending" ? 1 : -1;
+  return items.sort((a, b) => compareDashboardTicketByProp(a, b, prop) * factor);
+}
+
+function onDashboardTaskSortChange({ prop, order }) {
+  dashboardTaskSort.prop = prop || "";
+  dashboardTaskSort.order = order || "";
+  dashboardTaskPage.value = 1;
+}
+
+function onDashboardBugSortChange({ prop, order }) {
+  dashboardBugSort.prop = prop || "";
+  dashboardBugSort.order = order || "";
+  dashboardBugPage.value = 1;
+}
 const DESCRIPTION_COLORS = [
   { label: "默认", value: "#303133" },
   { label: "红色", value: "#e53935" },
@@ -2437,6 +2674,56 @@ const descriptionToolbarState = reactive({
   fontSize: 14,
 });
 const descriptionLastRange = ref(null);
+
+function syncTicketDialogEditorFromForm() {
+  const editor = ticketDialogEditorRef.value;
+  if (!editor) return;
+  const html = String(ticketDialog.form.description || "");
+  if (editor.innerHTML !== html) {
+    editor.innerHTML = html;
+  }
+}
+
+function onTicketDialogEditorInput() {
+  const editor = ticketDialogEditorRef.value;
+  if (!editor) return;
+  ticketDialog.form.description = editor.innerHTML;
+}
+
+function applyTicketDialogCommand(command, value = null) {
+  const editor = ticketDialogEditorRef.value;
+  if (!editor) return;
+  editor.focus();
+  document.execCommand(command, false, value);
+  onTicketDialogEditorInput();
+}
+
+function insertTicketDialogLink() {
+  const linkUrl = window.prompt("请输入超链接地址（如 https://example.com）", "https://");
+  const normalized = normalizeDescriptionLink(linkUrl);
+  if (!normalized) return;
+  applyTicketDialogCommand("createLink", normalized);
+}
+
+watch(
+  () => ticketDialog.visible,
+  async (visible) => {
+    if (!visible) return;
+    await nextTick();
+    syncTicketDialogEditorFromForm();
+  },
+);
+
+watch(
+  () => ticketDialog.form.description,
+  () => {
+    if (!ticketDialog.visible) return;
+    const editor = ticketDialogEditorRef.value;
+    if (!editor) return;
+    if (document.activeElement === editor) return;
+    syncTicketDialogEditorFromForm();
+  },
+);
 
 function escapeDescriptionHtml(s) {
   return String(s)
@@ -2686,27 +2973,14 @@ function isTicketOverdue(ticket) {
 
 function getDashboardStatusTagType(status) {
   const map = {
+    未开始: "info",
+    进行中: "warning",
     待处理: "info",
     待验收: "warning",
     待测试: "primary",
     已完成: "success",
   };
   return map[status] || "info";
-}
-
-function getTaskTypeDotText(ticket) {
-  const subType = String(ticket?.sub_type || "").trim();
-  if (subType) return subType[0];
-  const ticketType = String(ticket?.ticket_type || "").trim();
-  return ticketType ? ticketType[0] : "需";
-}
-
-function getBugTypeDotText(ticket) {
-  const relatedSubType = String(ticket?.related_task_sub_type || "").trim();
-  if (relatedSubType) return relatedSubType[0];
-  const relatedType = String(ticket?.related_task_type || "").trim();
-  if (relatedType) return relatedType[0];
-  return "B";
 }
 
 function getDashboardPriorityDotClass(priority) {
@@ -2786,7 +3060,8 @@ function getDeadlineHintType(ticket) {
 }
 
 async function copyTicketId(ticketId) {
-  const text = `#${ticketId}`;
+  const text = String(ticketId ?? "").trim();
+  if (!text) return;
   try {
     if (navigator?.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
@@ -2812,11 +3087,31 @@ function onProjectHubViewModeChange(nextMode) {
   projectHubTicketViewMode.value = nextMode || "list";
 }
 
-function onProjectHubTicketTypeChange(nextMode) {
-  projectHubTicketTypeMode.value = nextMode || "all";
-  selectedTicketIds.value = [];
+function onProjectHubFilterChange() {
   ticketPage.value = 1;
 }
+
+function toggleProjectHubFilters() {
+  projectHubFilterExpanded.value = !projectHubFilterExpanded.value;
+}
+
+function resetProjectHubFilters() {
+  projectHubTicketFilters.keyword_field = "title";
+  projectHubTicketFilters.keyword = "";
+  projectHubTicketFilters.status = "";
+  projectHubTicketFilters.related_user_id = null;
+  projectHubTicketFilters.executor_id = null;
+  projectHubTicketTypeMode.value = "all";
+  onProjectHubFilterChange();
+}
+
+const projectHubFiltersActive = computed(() => {
+  if ((projectHubTicketFilters.keyword || "").trim()) return true;
+  if (projectHubTicketFilters.status) return true;
+  if (Number(projectHubTicketFilters.related_user_id || 0) > 0) return true;
+  if (Number(projectHubTicketFilters.executor_id || 0) > 0) return true;
+  return projectHubTicketTypeMode.value !== "all";
+});
 
 async function onAnalyticsRangeChange(days) {
   await setAnalyticsRangeDays(Number(days || 14));
@@ -2905,6 +3200,14 @@ function getPriorityToneClass(priority) {
   return map[priority] || "quick-priority-mid";
 }
 
+function canEditTicketPriority(ticket) {
+  const uid = Number(user.value?.id || 0);
+  if (!uid) return false;
+  const creatorId = Number(ticket?.creator_id || 0);
+  const testerId = Number(ticket?.tester_id || 0);
+  return uid === creatorId || uid === testerId;
+}
+
 async function submitDescriptionEdit() {
   const sanitized = sanitizeDescriptionHtml(ticketDetail.descriptionDraft || "");
   await saveTicketDescription(sanitized);
@@ -2942,7 +3245,7 @@ onUnmounted(() => {
 }
 
 .topbar {
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
 }
 
@@ -2983,9 +3286,17 @@ onUnmounted(() => {
 .topbar-middle {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-left: auto;
   flex-wrap: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+  gap: 24px;
+}
+
+.topbar-create-pair {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .project-hub-tickets-card {
@@ -3199,6 +3510,11 @@ onUnmounted(() => {
   max-width: 100%;
 }
 
+.global-search-input :deep(.el-input__inner::placeholder),
+.global-search-input :deep(input::placeholder) {
+  font-size: 12px;
+}
+
 .toolbar {
   margin-bottom: 12px;
   display: flex;
@@ -3288,27 +3604,6 @@ onUnmounted(() => {
 
 .table-scroll-inner {
   min-height: 0;
-}
-
-.ticket-batch-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-}
-
-.ticket-batch-label {
-  font-size: 12px;
-  color: #606266;
-}
-
-.ticket-batch-select {
-  width: 130px;
-}
-
-.ticket-batch-select.assignee {
-  width: 200px;
 }
 
 .project-hub-pagination {
@@ -3743,6 +4038,10 @@ onUnmounted(() => {
     flex-wrap: wrap;
   }
 
+  .topbar-middle {
+    margin-left: 0;
+  }
+
   .project-switch-select.compact {
     width: 180px;
   }
@@ -4004,6 +4303,10 @@ onUnmounted(() => {
   width: 100%;
 }
 
+.ticket-quick-priority {
+  width: 112px;
+}
+
 .ticket-quick-item.assignees {
   width: 210px;
 }
@@ -4085,13 +4388,39 @@ onUnmounted(() => {
   align-items: start;
 }
 
-.ticket-assignee-select {
+.ticket-role-select {
   width: 100%;
 }
 
-.ticket-quick-item :deep(.el-input__wrapper),
-.ticket-assignee-select :deep(.el-input__wrapper) {
-  background: #f7faff;
+.ticket-role-select :deep(.el-select__wrapper) {
+  min-height: 30px;
+  padding: 0 6px;
+  border: 1px solid #e3e8f0;
+  border-radius: 6px;
+  background: #fafbfc;
+  box-shadow: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.ticket-role-select:hover :deep(.el-select__wrapper) {
+  border-color: #d4dce7;
+  background: #f7f9fb;
+}
+
+.ticket-role-select :deep(.el-select__wrapper.is-focused) {
+  border-color: #b6c3d6;
+  background: #fff;
+  box-shadow: none;
+}
+
+.ticket-role-select :deep(.el-select__selected-item),
+.ticket-role-select :deep(.el-input__inner) {
+  color: #334155;
+  font-weight: 500;
+}
+
+.ticket-role-select :deep(.el-input__inner::placeholder) {
+  color: #a2aebb;
 }
 
 .ticket-quick-item :deep(.el-input__wrapper),
@@ -4128,16 +4457,32 @@ onUnmounted(() => {
 }
 
 :deep(.quick-select-popper .el-select-dropdown__item.is-selected),
-:deep(.assignee-select-popper .el-select-dropdown__item.is-selected) {
-  color: #5d83d5;
-  background: #f2f7ff;
-  font-weight: 600;
+:deep(.role-select-popper .el-select-dropdown__item.is-selected) {
+  color: #3a4a62;
+  background: #edf1f6;
+  font-weight: 500;
 }
 
-.ticket-assignee-select :deep(.el-tag) {
-  background: #edf4ff;
-  border-color: #c9dcff;
-  color: #2f61d0;
+:deep(.role-select-popper .el-select-dropdown__item) {
+  margin: 2px 6px;
+  border-radius: 6px;
+}
+
+:deep(.role-select-popper .el-select-dropdown__item:hover) {
+  background: #f3f5f8;
+}
+
+.ticket-current-owner-wrap {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.ticket-current-owner-tag {
+  border-color: #d8e0eb;
+  color: #3d4c63;
+  background: #f6f8fb;
+  font-weight: 500;
 }
 
 .status-overdue-tag {
@@ -4274,6 +4619,12 @@ onUnmounted(() => {
 }
 
 .ticket-detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ticket-flow-actions-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -4528,16 +4879,33 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.dashboard-main-table :deep(.el-table__cell) {
+.dashboard-main-table :deep(.el-table__cell),
+.project-hub-ticket-table :deep(.el-table__cell) {
   font-size: 13px;
+}
+
+/* 标题列允许换行（默认 .cell 常为单行省略） */
+.dashboard-main-table :deep(.el-table__body .el-table__cell:first-child .cell) {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.dashboard-main-table :deep(.el-table__body .el-table__cell:nth-child(2) .cell) {
+  white-space: normal;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  vertical-align: middle;
 }
 
 .dashboard-title-cell {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
   position: relative;
+  padding: 2px 0;
 }
 
 .dashboard-title-cell.is-child-task {
@@ -4596,13 +4964,17 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
+  min-width: 34px;
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
+}
+
+.dashboard-ticket-id-dot {
+  cursor: copy;
 }
 
 .dashboard-type-dot.task {
@@ -4622,34 +4994,33 @@ onUnmounted(() => {
 .dashboard-title-line {
   color: #303133;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-.dashboard-ticket-id {
-  color: #909399;
+.dashboard-title-text {
   font-weight: 600;
-  margin-right: 6px;
-  cursor: copy;
-  transition: color 0.15s ease;
-}
-
-.dashboard-ticket-id:hover {
-  color: #409eff;
 }
 
 .dashboard-task-relation {
-  margin-top: 2px;
+  margin-top: 4px;
   color: #909399;
   font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .dashboard-priority-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 4px;
   font-weight: 600;
+  width: 100%;
 }
 
 .dashboard-priority-dot {
@@ -5521,6 +5892,32 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.ticket-dialog-editor-wrap {
+  width: 100%;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ticket-dialog-editor-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fafafa;
+  flex-wrap: wrap;
+}
+
+.ticket-dialog-editor-content {
+  min-height: 180px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 10px;
+  line-height: 1.6;
+  outline: none;
+  background: #fff;
+}
+
 .wiki-editor-toolbar {
   display: flex;
   gap: 8px;
@@ -5602,6 +5999,41 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.project-hub-filter-panel {
+  margin-bottom: 10px;
+  padding: 10px 12px 4px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fafcff;
+}
+
+.project-hub-filter-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 12px;
+}
+
+.project-hub-filter-form :deep(.el-form-item) {
+  margin-bottom: 8px;
+}
+
+.project-hub-filter-keyword {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.project-hub-filter-keyword-field {
+  width: 92px;
+  flex-shrink: 0;
+}
+
+.project-hub-filter-keyword-input,
+.project-hub-filter-item {
+  width: 100%;
+}
+
 .project-hub-view-icons {
   margin-left: auto;
   display: inline-flex;
@@ -5622,6 +6054,7 @@ onUnmounted(() => {
   justify-content: center;
   font-size: 14px;
   transition: all 0.15s ease;
+  position: relative;
 }
 
 .project-view-icon-btn:hover {
@@ -5633,6 +6066,28 @@ onUnmounted(() => {
   border-color: #409eff;
   color: #409eff;
   background: #ecf5ff;
+}
+
+.project-filter-active-dot {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f56c6c;
+}
+
+@media (max-width: 1200px) {
+  .project-hub-filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .project-hub-filter-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 .project-kanban {

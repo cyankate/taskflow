@@ -28,16 +28,21 @@ export function normalizeAttachments(list) {
   return list
     .map((item, idx) => {
       if (typeof item === "string") {
+        const guessedType = item.includes(".mp4") || item.includes("video/") ? "video/*" : "image/*";
         return {
           name: `附件${idx + 1}`,
-          type: item.includes(".mp4") || item.includes("video/") ? "video" : "image",
+          type: guessedType,
           url: item,
         };
       }
       if (item && item.url) {
+        const rawType = String(item.type || item.mime || "").trim().toLowerCase();
+        let normalizedType = rawType || (item.url.includes("video/") ? "video/*" : "image/*");
+        if (normalizedType === "image") normalizedType = "image/*";
+        if (normalizedType === "video") normalizedType = "video/*";
         return {
           name: item.name || `附件${idx + 1}`,
-          type: item.type || (item.url.includes("video/") ? "video" : "image"),
+          type: normalizedType,
           url: item.url,
         };
       }
