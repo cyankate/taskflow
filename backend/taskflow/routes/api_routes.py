@@ -71,8 +71,8 @@ RATE_LIMIT_UPLOAD_COUNT = 20
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_STORE: dict[str, list[float]] = {}
 UPLOAD_API_PREFIX = "/api/uploads/"
-TASK_TICKET_ID_START = 10000
-BUG_TICKET_ID_START = 30000
+TASK_TICKET_ID_START = 1000
+BUG_TICKET_ID_START = 5000
 
 
 def _log_security_event(event: str, detail: str, level: str = "warning") -> None:

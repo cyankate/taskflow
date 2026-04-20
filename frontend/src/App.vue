@@ -184,6 +184,13 @@
                   @sort-change="onDashboardTaskSortChange"
                   @row-click="handleTicketRowClick"
                 >
+                  <el-table-column label="ID" prop="id" width="76" sortable="custom" align="center">
+                    <template #default="scope">
+                      <span class="dashboard-type-dot task dashboard-ticket-id-dot" @click.stop="copyTicketId(scope.row.id)">
+                        {{ scope.row.id || "-" }}
+                      </span>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="标题" prop="id" sortable="custom" min-width="300">
                     <template #default="scope">
                       <div class="dashboard-title-cell" :class="{ 'is-child-task': isChildTask(scope.row) }">
@@ -196,9 +203,6 @@
                           ]"
                         >
                           {{ getTaskRelationRole(scope.row) === "parent" ? "父" : "子" }}
-                        </span>
-                        <span class="dashboard-type-dot task dashboard-ticket-id-dot" @click.stop="copyTicketId(scope.row.id)">
-                          {{ scope.row.id || "-" }}
                         </span>
                         <div class="dashboard-title-main">
                           <div class="dashboard-title-line">
@@ -232,7 +236,6 @@
                   <el-table-column label="负责人" width="88">
                     <template #default="scope">
                       <div class="dashboard-owner-cell">
-                        <span class="dashboard-owner-avatar">{{ getDashboardOwnerInitial(scope.row) }}</span>
                         <span class="dashboard-owner-name">{{ getDashboardOwnerName(scope.row) }}</span>
                       </div>
                     </template>
@@ -295,12 +298,16 @@
                   @sort-change="onDashboardBugSortChange"
                   @row-click="handleTicketRowClick"
                 >
+                  <el-table-column label="ID" prop="id" width="76" sortable="custom" align="center">
+                    <template #default="scope">
+                      <span class="dashboard-type-dot bug dashboard-ticket-id-dot" @click.stop="copyTicketId(scope.row.id)">
+                        {{ scope.row.id || "-" }}
+                      </span>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="标题" prop="id" sortable="custom" min-width="360">
                     <template #default="scope">
                       <div class="dashboard-title-cell">
-                        <span class="dashboard-type-dot bug dashboard-ticket-id-dot" @click.stop="copyTicketId(scope.row.id)">
-                          {{ scope.row.id || "-" }}
-                        </span>
                         <div class="dashboard-title-main">
                           <div class="dashboard-title-line">
                             <span class="dashboard-title-text">{{ scope.row.title }}</span>
@@ -330,7 +337,6 @@
                   <el-table-column label="负责人" width="88">
                     <template #default="scope">
                       <div class="dashboard-owner-cell">
-                        <span class="dashboard-owner-avatar">{{ getDashboardOwnerInitial(scope.row) }}</span>
                         <span class="dashboard-owner-name">{{ getDashboardOwnerName(scope.row) }}</span>
                       </div>
                     </template>
@@ -521,9 +527,12 @@
                     class="clickable-ticket-table project-hub-ticket-table"
                     @row-click="handleTicketRowClick"
                   >
-                    <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
+                    <el-table-column prop="id" label="ID" width="76">
+                      <template #default="scope">{{ scope.row.id }}</template>
+                    </el-table-column>
+                    <el-table-column prop="title" label="标题" min-width="240" show-overflow-tooltip />
                     <el-table-column prop="ticket_type" label="类型" width="88" />
-                    <el-table-column label="状态" width="150">
+                    <el-table-column label="状态" width="112">
                       <template #default="scope">
                         <span>{{ scope.row.status }}</span>
                         <el-tag v-if="isTicketOverdue(scope.row)" size="small" type="danger" effect="plain" class="status-overdue-tag">
@@ -531,18 +540,27 @@
                         </el-tag>
                       </template>
                     </el-table-column>
-                    <el-table-column prop="priority" label="优先级" width="80" />
-                    <el-table-column label="负责人" min-width="120" show-overflow-tooltip>
+                    <el-table-column prop="priority" label="优先级" width="72" />
+                    <el-table-column label="负责人" min-width="160" show-overflow-tooltip>
                       <template #default="scope">{{ scope.row.assignees.map((x) => x.display_name).join("、") || "—" }}</template>
                     </el-table-column>
                     <el-table-column label="截止" width="160">
                       <template #default="scope">{{ formatDynamicTime(scope.row.end_time) }}</template>
                     </el-table-column>
-                    <el-table-column label="操作" width="200" fixed="right">
+                    <el-table-column label="操作" width="92" fixed="right" align="center">
                       <template #default="scope">
-                        <el-button link type="primary" @click.stop="openTicketDialog(scope.row)">编辑</el-button>
-                        <el-button link type="success" @click.stop="openTicketDetail(scope.row)">详情</el-button>
-                        <el-button link type="danger" @click.stop="removeTicket(scope.row)">删除</el-button>
+                        <el-dropdown trigger="click" @command="(command) => onProjectHubRowAction(command, scope.row)">
+                          <el-button link type="primary" @click.stop>
+                            更多
+                          </el-button>
+                          <template #dropdown>
+                            <el-dropdown-menu>
+                              <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                              <el-dropdown-item command="detail">详情</el-dropdown-item>
+                              <el-dropdown-item command="delete" :disabled="!user.is_admin">删除</el-dropdown-item>
+                            </el-dropdown-menu>
+                          </template>
+                        </el-dropdown>
                       </template>
                     </el-table-column>
                   </el-table>
@@ -826,6 +844,16 @@
 
           <section v-show="activeTab === 'wiki'">
           <el-card class="wiki-card">
+            <template #header>
+              <div class="wiki-card-head">
+                <div class="dashboard-panel-title">Wiki</div>
+                <div class="wiki-card-head-actions">
+                  <el-button v-if="wikiViewMode === 'detail'" size="small" plain @click="backToWikiList">返回列表</el-button>
+                  <el-button type="primary" size="small" :disabled="wikiDetailEditing" @click="openWikiDialog()">新建文章</el-button>
+                </div>
+              </div>
+            </template>
+            <template v-if="wikiViewMode === 'list'">
             <div class="wiki-category-bar">
               <el-button
                 size="small"
@@ -844,7 +872,7 @@
                 {{ item.name }}
               </el-button>
             </div>
-            <el-table :data="pagedWikiArticles" stripe class="clickable-ticket-table" @row-click="openWikiDetailByRow">
+            <el-table :data="pagedWikiArticles" stripe class="clickable-ticket-table" @row-click="openWikiDetailPageByRow">
               <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
               <el-table-column prop="category_name" label="专栏" width="140" />
               <el-table-column prop="updater_name" label="更新人" width="120" />
@@ -853,8 +881,8 @@
               </el-table-column>
               <el-table-column label="操作" width="220">
                 <template #default="scope">
-                  <el-button link type="primary" @click.stop="openWikiDialog(scope.row)">编辑</el-button>
-                  <el-button link type="success" @click.stop="openWikiDetail(scope.row)">查看</el-button>
+                  <el-button link type="primary" @click.stop="openWikiDetailEditPage(scope.row)">编辑</el-button>
+                  <el-button link type="success" @click.stop="openWikiDetailPage(scope.row)">查看</el-button>
                   <el-button
                     link
                     type="danger"
@@ -875,8 +903,135 @@
                 v-model:current-page="wikiPage"
               />
             </div>
+            </template>
+            <template v-else>
+              <div class="wiki-detail-page">
+                <div class="wiki-detail-head">
+                  <h2 class="wiki-detail-title">{{ wikiDetail.article.title || "-" }}</h2>
+                  <div class="wiki-detail-head-actions">
+                    <template v-if="wikiDetailEditing">
+                      <el-button size="small" @click="cancelWikiDetailEdit">取消</el-button>
+                      <el-button size="small" type="primary" @click="saveWikiDetailPage">保存内容</el-button>
+                    </template>
+                    <el-button v-else size="small" type="primary" plain @click="startWikiDetailEdit">编辑内容</el-button>
+                  </div>
+                </div>
+                <div class="wiki-detail-meta">
+                  <el-tag effect="plain">{{ wikiDetail.article.category_name || "未分类" }}</el-tag>
+                  <span>创建人：{{ wikiDetail.article.creator_name || "-" }}</span>
+                  <span>更新人：{{ wikiDetail.article.updater_name || "-" }}</span>
+                  <span>更新时间：{{ formatDynamicTime(wikiDetail.article.updated_at) || "-" }}</span>
+                </div>
+                <el-divider />
+                <div v-if="wikiDetailEditing" class="wiki-editor-wrap">
+                  <div class="wiki-editor-toolbar">
+                    <el-button size="small" text :type="wikiToolbarState.bold ? 'primary' : undefined" @click="applyWikiEditorCommand('bold')">
+                      加粗
+                    </el-button>
+                    <el-button
+                      size="small"
+                      text
+                      :type="wikiToolbarState.strike ? 'primary' : undefined"
+                      @click="applyWikiEditorCommand('strikeThrough')"
+                    >
+                      划线
+                    </el-button>
+                    <el-button
+                      size="small"
+                      text
+                      :type="wikiToolbarState.orderedList ? 'primary' : undefined"
+                      @click="applyWikiEditorCommand('insertOrderedList')"
+                    >
+                      有序列表
+                    </el-button>
+                    <el-button
+                      size="small"
+                      text
+                      :type="wikiToolbarState.unorderedList ? 'primary' : undefined"
+                      @click="applyWikiEditorCommand('insertUnorderedList')"
+                    >
+                      无序列表
+                    </el-button>
+                    <el-select
+                      :model-value="wikiToolbarState.fontSize"
+                      size="small"
+                      class="wiki-font-size-select"
+                      @change="onWikiFontSizeChange"
+                    >
+                      <el-option v-for="item in DESCRIPTION_FONT_SIZES" :key="`wiki-detail-font-${item}`" :label="`${item}px`" :value="item" />
+                    </el-select>
+                    <el-button
+                      size="small"
+                      text
+                      :type="wikiToolbarState.blockquote ? 'primary' : undefined"
+                      @click="toggleWikiEditorBlockquote"
+                    >
+                      引用块
+                    </el-button>
+                    <el-button size="small" text :type="wikiToolbarState.link ? 'primary' : undefined" @click="insertWikiEditorLink">
+                      链接
+                    </el-button>
+                    <div class="wiki-editor-color-palette">
+                      <button
+                        v-for="item in WIKI_EDITOR_COLORS"
+                        :key="`wiki-detail-color-${item.value}`"
+                        type="button"
+                        class="wiki-editor-color-dot"
+                        :class="{ active: wikiToolbarState.color === item.value.toLowerCase() }"
+                        :style="{ backgroundColor: item.value }"
+                        :title="item.label"
+                        @click="onWikiEditorColorChange(item.value)"
+                      ></button>
+                    </div>
+                    <el-button size="small" text @click="applyWikiEditorCommand('removeFormat')">清除格式</el-button>
+                    <label class="upload-btn">
+                      插入图片
+                      <input
+                        type="file"
+                        accept="image/*"
+                        class="hidden-file-input"
+                        @change="(event) => insertWikiMedia(event, 'image')"
+                      />
+                    </label>
+                    <label class="upload-btn">
+                      插入视频
+                      <input
+                        type="file"
+                        accept="video/*"
+                        class="hidden-file-input"
+                        @change="(event) => insertWikiMedia(event, 'video')"
+                      />
+                    </label>
+                  </div>
+                  <div
+                    ref="wikiEditorRef"
+                    class="wiki-editor-content"
+                    contenteditable="true"
+                    @input="
+                      onWikiEditorInput();
+                      syncWikiToolbarState();
+                    "
+                  ></div>
+                </div>
+                <div v-else class="wiki-detail-content rich-text-content" v-html="wikiDetail.article.content || ''"></div>
+                <el-divider />
+                <div class="wiki-detail-attachments" :class="getWikiAttachmentSectionClass(wikiDetail.article.attachments)">
+                  <div class="wiki-detail-attachments-head">
+                    <div class="ticket-attachments-title">附件</div>
+                    <span v-if="getWikiAttachmentCount(wikiDetail.article.attachments) > 0" class="wiki-detail-attachments-count">
+                      {{ getWikiAttachmentCount(wikiDetail.article.attachments) }} 个
+                    </span>
+                  </div>
+                  <div v-if="getWikiAttachmentCount(wikiDetail.article.attachments) > 0" class="wiki-attachment-list wiki-detail-attachment-list">
+                    <div v-for="(item, idx) in wikiDetail.article.attachments" :key="`${item.url}-${idx}`" class="wiki-attachment-item">
+                      <a :href="item.url" target="_blank" rel="noreferrer">{{ item.name || `附件${idx + 1}` }}</a>
+                    </div>
+                  </div>
+                  <div v-else class="wiki-detail-attachment-empty">当前文章没有附件</div>
+                </div>
+              </div>
+            </template>
           </el-card>
-          <el-button class="wiki-fab-create" type="primary" @click="openWikiDialog()">新建文章</el-button>
           </section>
 
           <section v-show="activeTab === 'console'" class="console-page">
@@ -1317,10 +1472,14 @@
                 <span
                   class="ticket-type-art"
                   :class="ticketDetail.ticket.ticket_type === 'BUG单' ? 'bug' : 'demand'"
+                  @click.stop="copyTicketId(ticketDetail.ticket.id)"
                 >
-                  {{ ticketDetail.ticket.ticket_type || "需求单" }}
+                  <span>{{ ticketDetail.ticket.ticket_type || "需求单" }}</span>
+                  <span class="ticket-type-art-sep">-</span>
+                  <span class="ticket-type-art-id">
+                    {{ ticketDetail.ticket.id || "-" }}
+                  </span>
                 </span>
-                <span class="ticket-title-id">#{{ ticketDetail.ticket.id || "-" }}</span>
                 <span class="ticket-title-text">{{ ticketDetail.ticket.title }}</span>
               </h3>
               <div class="ticket-detail-actions">
@@ -1892,7 +2051,7 @@
 
                 <div class="detail-side-block">
                   <el-descriptions border :column="1" size="small" class="ticket-detail-descriptions">
-                    <el-descriptions-item label="工单ID">#{{ ticketDetail.ticket.id || "-" }}</el-descriptions-item>
+                    <el-descriptions-item label="ID">#{{ ticketDetail.ticket.id || "-" }}</el-descriptions-item>
                     <el-descriptions-item label="所属模块">{{ ticketDetail.ticket.module || "-" }}</el-descriptions-item>
                     <el-descriptions-item label="版本">{{ ticketDetail.ticket.version_name || "-" }}</el-descriptions-item>
                     <el-descriptions-item label="创建人">{{ detailCreatorName }}</el-descriptions-item>
@@ -2244,6 +2403,58 @@
         <el-form-item label="内容">
           <div class="wiki-editor-wrap">
             <div class="wiki-editor-toolbar">
+              <el-button size="small" text :type="wikiToolbarState.bold ? 'primary' : undefined" @click="applyWikiEditorCommand('bold')">
+                加粗
+              </el-button>
+              <el-button
+                size="small"
+                text
+                :type="wikiToolbarState.strike ? 'primary' : undefined"
+                @click="applyWikiEditorCommand('strikeThrough')"
+              >
+                划线
+              </el-button>
+              <el-button
+                size="small"
+                text
+                :type="wikiToolbarState.orderedList ? 'primary' : undefined"
+                @click="applyWikiEditorCommand('insertOrderedList')"
+              >
+                有序列表
+              </el-button>
+              <el-button
+                size="small"
+                text
+                :type="wikiToolbarState.unorderedList ? 'primary' : undefined"
+                @click="applyWikiEditorCommand('insertUnorderedList')"
+              >
+                无序列表
+              </el-button>
+              <el-select :model-value="wikiToolbarState.fontSize" size="small" class="wiki-font-size-select" @change="onWikiFontSizeChange">
+                <el-option v-for="item in DESCRIPTION_FONT_SIZES" :key="`wiki-font-${item}`" :label="`${item}px`" :value="item" />
+              </el-select>
+              <el-button
+                size="small"
+                text
+                :type="wikiToolbarState.blockquote ? 'primary' : undefined"
+                @click="toggleWikiEditorBlockquote"
+              >
+                引用块
+              </el-button>
+              <el-button size="small" text :type="wikiToolbarState.link ? 'primary' : undefined" @click="insertWikiEditorLink">链接</el-button>
+              <div class="wiki-editor-color-palette">
+                <button
+                  v-for="item in WIKI_EDITOR_COLORS"
+                  :key="`wiki-color-${item.value}`"
+                  type="button"
+                  class="wiki-editor-color-dot"
+                  :class="{ active: wikiToolbarState.color === item.value.toLowerCase() }"
+                  :style="{ backgroundColor: item.value }"
+                  :title="item.label"
+                  @click="onWikiEditorColorChange(item.value)"
+                ></button>
+              </div>
+              <el-button size="small" text @click="applyWikiEditorCommand('removeFormat')">清除格式</el-button>
               <label class="upload-btn">
                 插入图片
                 <input
@@ -2263,7 +2474,15 @@
                 />
               </label>
             </div>
-            <div ref="wikiEditorRef" class="wiki-editor-content" contenteditable="true" @input="onWikiEditorInput"></div>
+            <div
+              ref="wikiEditorRef"
+              class="wiki-editor-content"
+              contenteditable="true"
+              @input="
+                onWikiEditorInput();
+                syncWikiToolbarState();
+              "
+            ></div>
           </div>
         </el-form-item>
         <el-form-item label="附件">
@@ -2292,28 +2511,6 @@
         <el-button type="primary" @click="saveWikiArticle">提交</el-button>
       </template>
     </el-dialog>
-
-
-    <el-drawer v-model="wikiDetail.visible" title="Wiki 详情" size="60%">
-      <h2 class="wiki-detail-title">{{ wikiDetail.article.title }}</h2>
-      <div class="wiki-detail-meta">
-        <el-tag effect="plain">{{ wikiDetail.article.category_name || "未分类" }}</el-tag>
-        <span>创建人：{{ wikiDetail.article.creator_name || "-" }}</span>
-        <span>更新人：{{ wikiDetail.article.updater_name || "-" }}</span>
-        <span>更新时间：{{ formatDynamicTime(wikiDetail.article.updated_at) || "-" }}</span>
-      </div>
-      <el-divider />
-      <div class="wiki-detail-content" v-html="wikiDetail.article.content || ''"></div>
-      <el-divider />
-      <div class="ticket-attachments-title">附件</div>
-      <div v-if="(wikiDetail.article.attachments || []).length > 0" class="wiki-attachment-list">
-        <div v-for="(item, idx) in wikiDetail.article.attachments" :key="`${item.url}-${idx}`" class="wiki-attachment-item">
-          <a :href="item.url" target="_blank" rel="noreferrer">{{ item.name || `附件${idx + 1}` }}</a>
-        </div>
-      </div>
-      <el-empty v-else description="暂无附件" :image-size="56" />
-    </el-drawer>
-
     <el-dialog v-model="imagePreview.visible" :title="imagePreview.name || '图片预览'" width="72%" top="5vh" destroy-on-close>
       <div class="image-preview-wrap">
         <img :src="imagePreview.url" :alt="imagePreview.name || 'preview'" class="image-preview-large" />
@@ -2506,8 +2703,7 @@ const {
   onWikiAttachmentChange,
   removeWikiAttachment,
   saveWikiArticle,
-  openWikiDetail,
-  openWikiDetailByRow,
+  openWikiDetail: openWikiDetailRaw,
   removeWikiArticle,
   openUserDialog,
   saveUser,
@@ -2554,6 +2750,8 @@ const {
 
 const descriptionEditorRef = ref(null);
 const ticketDialogEditorRef = ref(null);
+const wikiViewMode = ref("list");
+const wikiDetailEditing = ref(false);
 const TICKET_MODULE_OPTIONS = ["数值", "业务功能", "系统构建", "工具开发", "美术资源", "界面优化", "战斗"];
 const DASHBOARD_STATUS_SORT_ORDER = {
   未开始: 0,
@@ -2646,6 +2844,14 @@ const DESCRIPTION_COLORS = [
   { label: "蓝色", value: "#1e88e5" },
   { label: "紫色", value: "#8e24aa" },
 ];
+const WIKI_EDITOR_COLORS = [
+  { label: "默认", value: "#303133" },
+  { label: "红色", value: "#e53935" },
+  { label: "橙色", value: "#fb8c00" },
+  { label: "绿色", value: "#43a047" },
+  { label: "蓝色", value: "#1e88e5" },
+  { label: "紫色", value: "#8e24aa" },
+];
 const DESCRIPTION_FONT_SIZES = [12, 14, 16, 18, 20];
 const FONT_SIZE_COMMAND_MAP = {
   12: "2",
@@ -2673,7 +2879,18 @@ const descriptionToolbarState = reactive({
   color: "#303133",
   fontSize: 14,
 });
+const wikiToolbarState = reactive({
+  bold: false,
+  strike: false,
+  orderedList: false,
+  unorderedList: false,
+  blockquote: false,
+  link: false,
+  color: "#303133",
+  fontSize: 14,
+});
 const descriptionLastRange = ref(null);
+const wikiLastRange = ref(null);
 
 function syncTicketDialogEditorFromForm() {
   const editor = ticketDialogEditorRef.value;
@@ -2722,6 +2939,24 @@ watch(
     if (!editor) return;
     if (document.activeElement === editor) return;
     syncTicketDialogEditorFromForm();
+  },
+);
+
+watch(
+  () => wikiDialog.visible,
+  async (visible) => {
+    if (!visible && !wikiDetailEditing.value) return;
+    await nextTick();
+    syncWikiToolbarState();
+  },
+);
+
+watch(
+  () => wikiDetailEditing.value,
+  async (editing) => {
+    if (!editing) return;
+    await nextTick();
+    syncWikiToolbarState();
   },
 );
 
@@ -2789,6 +3024,19 @@ function getDescriptionSelectionContext() {
 
 function normalizeDescriptionFontTags() {
   const editor = descriptionEditorRef.value;
+  if (!editor) return;
+  const fonts = Array.from(editor.querySelectorAll("font[size]"));
+  for (const fontEl of fonts) {
+    const mapped = FONT_SIZE_COMMAND_REVERSE_MAP[fontEl.getAttribute("size")] || 14;
+    const span = document.createElement("span");
+    span.style.fontSize = `${mapped}px`;
+    span.innerHTML = fontEl.innerHTML;
+    fontEl.replaceWith(span);
+  }
+}
+
+function normalizeWikiFontTags() {
+  const editor = wikiEditorRef.value;
   if (!editor) return;
   const fonts = Array.from(editor.querySelectorAll("font[size]"));
   for (const fontEl of fonts) {
@@ -2997,11 +3245,6 @@ function getDashboardOwnerName(ticket) {
   return ticket?.current_owner_name || ticket?.executor_name || ticket?.creator_name || "未分配";
 }
 
-function getDashboardOwnerInitial(ticket) {
-  const name = String(getDashboardOwnerName(ticket) || "").trim();
-  return name ? name[0].toUpperCase() : "U";
-}
-
 function hasLinkedParentInView(ticket) {
   const parentId = Number(ticket?.parent_task_id || 0);
   return parentId > 0 && dashboardTaskIdSet.value.has(parentId);
@@ -3059,6 +3302,18 @@ function getDeadlineHintType(ticket) {
   return "normal";
 }
 
+function getWikiAttachmentCount(attachments) {
+  return Array.isArray(attachments) ? attachments.length : 0;
+}
+
+function getWikiAttachmentSectionClass(attachments) {
+  const count = getWikiAttachmentCount(attachments);
+  if (count <= 0) return "is-empty";
+  if (count <= 2) return "is-few";
+  if (count <= 6) return "is-medium";
+  return "is-many";
+}
+
 async function copyTicketId(ticketId) {
   const text = String(ticketId ?? "").trim();
   if (!text) return;
@@ -3087,6 +3342,144 @@ function onProjectHubViewModeChange(nextMode) {
   projectHubTicketViewMode.value = nextMode || "list";
 }
 
+async function openWikiDetailPage(row) {
+  if (!row?.id) return;
+  await openWikiDetailRaw(row);
+  wikiViewMode.value = "detail";
+  wikiDetailEditing.value = false;
+}
+
+function openWikiDetailPageByRow(row) {
+  if (!row?.id) return;
+  openWikiDetailPage(row);
+}
+
+async function openWikiDetailEditPage(row) {
+  await openWikiDetailPage(row);
+  await startWikiDetailEdit();
+}
+
+function backToWikiList() {
+  wikiViewMode.value = "list";
+  wikiDetailEditing.value = false;
+  wikiDetail.visible = false;
+}
+
+async function startWikiDetailEdit() {
+  const article = wikiDetail.article || {};
+  if (!article.id) return;
+  wikiAttachmentError.value = "";
+  wikiDialog.form = {
+    id: article.id,
+    title: article.title || "",
+    category_name: article.category_name || "",
+    content: article.content || "",
+    attachments: Array.isArray(article.attachments) ? [...article.attachments] : [],
+  };
+  wikiDetailEditing.value = true;
+  await nextTick();
+  if (wikiEditorRef.value) {
+    wikiEditorRef.value.innerHTML = wikiDialog.form.content || "";
+  }
+  syncWikiToolbarState();
+}
+
+function cancelWikiDetailEdit() {
+  wikiDetailEditing.value = false;
+  wikiAttachmentError.value = "";
+}
+
+async function saveWikiDetailPage() {
+  if (!wikiDetailEditing.value) return;
+  await saveWikiArticle();
+  await openWikiDetailRaw({ id: wikiDialog.form.id });
+  wikiViewMode.value = "detail";
+  wikiDetailEditing.value = false;
+}
+
+function applyWikiEditorCommand(command, value = null) {
+  const editor = wikiEditorRef.value;
+  if (!editor) return;
+  let ctx = getWikiSelectionContext();
+  if (!ctx && wikiLastRange.value && typeof window !== "undefined") {
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(wikiLastRange.value);
+    ctx = getWikiSelectionContext();
+  }
+  if (!ctx) return;
+  editor.focus();
+  document.execCommand("styleWithCSS", false, true);
+  document.execCommand(command, false, value);
+  if (command === "fontSize") {
+    normalizeWikiFontTags();
+  }
+  onWikiEditorInput();
+  syncWikiToolbarState();
+}
+
+function insertWikiEditorLink() {
+  const linkUrl = window.prompt("请输入超链接地址（如 https://example.com）", "https://");
+  const normalized = normalizeDescriptionLink(linkUrl);
+  if (!normalized) return;
+  applyWikiEditorCommand("createLink", normalized);
+}
+
+function toggleWikiEditorBlockquote() {
+  const next = wikiToolbarState.blockquote ? "p" : "blockquote";
+  applyWikiEditorCommand("formatBlock", next);
+}
+
+function getWikiSelectionContext() {
+  const editor = wikiEditorRef.value;
+  if (!editor || typeof window === "undefined") return null;
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) return null;
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) return null;
+  return { editor, selection, range };
+}
+
+function syncWikiToolbarState() {
+  if (!wikiDialog.visible && !wikiDetailEditing.value) return;
+  const ctx = getWikiSelectionContext();
+  if (!ctx) {
+    wikiToolbarState.bold = false;
+    wikiToolbarState.strike = false;
+    wikiToolbarState.orderedList = false;
+    wikiToolbarState.unorderedList = false;
+    wikiToolbarState.blockquote = false;
+    wikiToolbarState.link = false;
+    wikiToolbarState.fontSize = 14;
+    return;
+  }
+  wikiLastRange.value = ctx.range.cloneRange();
+  wikiToolbarState.bold = !!document.queryCommandState("bold");
+  wikiToolbarState.strike = !!document.queryCommandState("strikeThrough");
+  wikiToolbarState.orderedList = !!document.queryCommandState("insertOrderedList");
+  wikiToolbarState.unorderedList = !!document.queryCommandState("insertUnorderedList");
+  wikiToolbarState.link = !!document.queryCommandState("createLink");
+  const formatBlock = String(document.queryCommandValue("formatBlock") || "").toLowerCase();
+  wikiToolbarState.blockquote = formatBlock.includes("blockquote");
+  const color = normalizeColorValue(document.queryCommandValue("foreColor"));
+  if (color) wikiToolbarState.color = color;
+  const commandSize = String(document.queryCommandValue("fontSize") || "").trim();
+  if (FONT_SIZE_COMMAND_REVERSE_MAP[commandSize]) {
+    wikiToolbarState.fontSize = FONT_SIZE_COMMAND_REVERSE_MAP[commandSize];
+  }
+}
+
+function onWikiEditorColorChange(color) {
+  if (!color) return;
+  applyWikiEditorCommand("foreColor", color);
+}
+
+function onWikiFontSizeChange(size) {
+  const commandSize = FONT_SIZE_COMMAND_MAP[size];
+  if (!commandSize) return;
+  applyWikiEditorCommand("fontSize", commandSize);
+}
+
 function onProjectHubFilterChange() {
   ticketPage.value = 1;
 }
@@ -3103,6 +3496,21 @@ function resetProjectHubFilters() {
   projectHubTicketFilters.executor_id = null;
   projectHubTicketTypeMode.value = "all";
   onProjectHubFilterChange();
+}
+
+function onProjectHubRowAction(command, row) {
+  if (!row?.id) return;
+  if (command === "edit") {
+    openTicketDialog(row);
+    return;
+  }
+  if (command === "detail") {
+    openTicketDetail(row);
+    return;
+  }
+  if (command === "delete") {
+    removeTicket(row);
+  }
 }
 
 const projectHubFiltersActive = computed(() => {
@@ -3215,15 +3623,20 @@ async function submitDescriptionEdit() {
   descriptionLastRange.value = null;
 }
 
+function onGlobalSelectionChange() {
+  syncDescriptionToolbarState();
+  syncWikiToolbarState();
+}
+
 onMounted(() => {
   if (typeof document !== "undefined") {
-    document.addEventListener("selectionchange", syncDescriptionToolbarState);
+    document.addEventListener("selectionchange", onGlobalSelectionChange);
   }
 });
 
 onUnmounted(() => {
   if (typeof document !== "undefined") {
-    document.removeEventListener("selectionchange", syncDescriptionToolbarState);
+    document.removeEventListener("selectionchange", onGlobalSelectionChange);
   }
 });
 </script>
@@ -4198,7 +4611,8 @@ onUnmounted(() => {
 .ticket-type-art {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 2px;
   height: 24px;
   padding: 0 8px;
   border-radius: 7px;
@@ -4207,6 +4621,16 @@ onUnmounted(() => {
   font-weight: 700;
   border: 1px solid transparent;
   white-space: nowrap;
+  cursor: copy;
+}
+
+.ticket-type-art-sep {
+  opacity: 0.85;
+}
+
+.ticket-type-art-id {
+  cursor: copy;
+  padding: 0 1px;
 }
 
 .ticket-type-art.bug {
@@ -4993,7 +5417,7 @@ onUnmounted(() => {
 
 .dashboard-title-line {
   color: #303133;
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1.45;
   white-space: normal;
   word-break: break-word;
@@ -5001,7 +5425,7 @@ onUnmounted(() => {
 }
 
 .dashboard-title-text {
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .dashboard-task-relation {
@@ -5051,20 +5475,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-
-.dashboard-owner-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: #eef3ff;
-  color: #3154d6;
-  font-size: 12px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
 }
 
 .dashboard-owner-name {
@@ -5865,6 +6275,19 @@ onUnmounted(() => {
   padding-bottom: 8px;
 }
 
+.wiki-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wiki-card-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .wiki-category-bar {
   display: flex;
   gap: 8px;
@@ -5875,14 +6298,6 @@ onUnmounted(() => {
 
 .wiki-category-input {
   width: 100%;
-}
-
-.wiki-fab-create {
-  position: fixed;
-  right: 26px;
-  bottom: 26px;
-  z-index: 30;
-  box-shadow: 0 10px 24px rgba(64, 158, 255, 0.28);
 }
 
 .wiki-editor-wrap {
@@ -5924,16 +6339,57 @@ onUnmounted(() => {
   padding: 8px;
   border-bottom: 1px solid #ebeef5;
   background: #fafafa;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.wiki-editor-toolbar .upload-btn {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  border-color: #dcdfe6;
+  color: #606266;
+}
+
+.wiki-font-size-select {
+  width: 92px;
 }
 
 .wiki-editor-content {
-  min-height: 280px;
-  max-height: 480px;
+  min-height: 340px;
+  max-height: 560px;
   overflow: auto;
   padding: 10px;
   line-height: 1.6;
   outline: none;
   background: #fff;
+}
+
+.wiki-editor-color-palette {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.wiki-editor-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wiki-editor-color-dot:hover {
+  transform: translateY(-1px);
+}
+
+.wiki-editor-color-dot.active {
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.25);
 }
 
 .wiki-editor-content :deep(img),
@@ -5962,6 +6418,25 @@ onUnmounted(() => {
   margin: 0 0 10px;
 }
 
+.wiki-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wiki-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wiki-detail-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .wiki-detail-meta {
   display: flex;
   flex-wrap: wrap;
@@ -5971,7 +6446,67 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+.wiki-detail-attachments {
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fcfdff;
+  padding: 8px 10px;
+}
+
+.wiki-detail-attachments.is-empty {
+  padding: 6px 10px;
+}
+
+.wiki-detail-attachments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wiki-detail-attachments-count {
+  font-size: 12px;
+  color: #909399;
+}
+
+.wiki-detail-attachment-list {
+  margin-top: 6px;
+}
+
+.wiki-detail-attachment-empty {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #a0a7b4;
+}
+
+.wiki-detail-attachments :deep(.ticket-attachments-title) {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.wiki-detail-attachments .wiki-attachment-item {
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+
+.wiki-detail-attachments.is-few .wiki-detail-attachment-list {
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.wiki-detail-attachments.is-medium .wiki-detail-attachment-list {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.wiki-detail-attachments.is-many .wiki-detail-attachment-list {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  max-height: 188px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .wiki-detail-content {
+  min-height: 420px;
   line-height: 1.7;
   color: #303133;
 }
