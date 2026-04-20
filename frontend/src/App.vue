@@ -1484,11 +1484,25 @@
               </h3>
               <div class="ticket-detail-actions">
                 <el-button size="small" plain @click="closeTicketDetail">返回列表</el-button>
-                <el-button v-if="ticketDetail.ticket.ticket_type !== 'BUG单'" size="small" plain @click="createSubTaskFromDetail">
+                <el-button
+                  v-if="ticketDetail.ticket.ticket_type !== 'BUG单'"
+                  size="small"
+                  plain
+                  type="primary"
+                  class="ticket-create-action-btn ticket-create-action-btn-subtask"
+                  @click="createSubTaskFromDetail"
+                >
                   新建子任务
                 </el-button>
-                <el-button v-if="ticketDetail.ticket.ticket_type !== 'BUG单'" size="small" plain type="warning" @click="createBugFromDetail">
-                  新建关联BUG
+                <el-button
+                  v-if="ticketDetail.ticket.ticket_type !== 'BUG单'"
+                  size="small"
+                  plain
+                  type="primary"
+                  class="ticket-create-action-btn ticket-create-action-btn-bug"
+                  @click="createBugFromDetail"
+                >
+                  新建BUG
                 </el-button>
                 <el-button size="small" type="primary" plain @click="toggleTicketFollow">
                   {{ ticketDetail.ticket.is_following ? "取消关注" : "关注工单" }}
@@ -5046,6 +5060,30 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.ticket-create-action-btn {
+  --el-button-bg-color: #f4f8ff;
+  --el-button-border-color: #c9dcff;
+  --el-button-text-color: #356ebf;
+  --el-button-hover-bg-color: #eaf3ff;
+  --el-button-hover-border-color: #a9c8ff;
+  --el-button-hover-text-color: #2f5ea8;
+  --el-button-active-bg-color: #dfeeff;
+  --el-button-active-border-color: #8eb5ff;
+  --el-button-active-text-color: #294f8c;
+}
+
+.ticket-create-action-btn-bug {
+  --el-button-bg-color: #fff6ec;
+  --el-button-border-color: #ffd7ac;
+  --el-button-text-color: #c5751f;
+  --el-button-hover-bg-color: #ffefd9;
+  --el-button-hover-border-color: #ffc585;
+  --el-button-hover-text-color: #ad6518;
+  --el-button-active-bg-color: #ffe6c5;
+  --el-button-active-border-color: #ffb867;
+  --el-button-active-text-color: #96550f;
 }
 
 .ticket-flow-actions-row {
