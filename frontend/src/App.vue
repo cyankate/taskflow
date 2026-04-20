@@ -166,14 +166,19 @@
             <div class="dashboard-column dashboard-left-column">
               <el-card class="dashboard-panel dashboard-task-card">
                 <template #header>
-                  <div class="dashboard-panel-title">
-                    {{
-                      dashboardViewMode === "created"
-                        ? "我创建的需求"
-                        : dashboardViewMode === "related"
-                          ? "和我有关的需求"
-                          : "待我处理需求"
-                    }}
+                  <div class="dashboard-card-head">
+                    <div class="dashboard-panel-title">
+                      {{
+                        dashboardViewMode === "created"
+                          ? "我创建的需求"
+                          : dashboardViewMode === "related"
+                            ? "和我有关的需求"
+                            : "待我处理需求"
+                      }}
+                    </div>
+                    <el-tag v-if="dashboardActiveFilterLabel" size="small" type="primary" effect="light">
+                      {{ dashboardActiveFilterLabel }}
+                    </el-tag>
                   </div>
                 </template>
                 <el-table
@@ -181,6 +186,7 @@
                   stripe
                   max-height="390"
                   class="clickable-ticket-table dashboard-main-table"
+                  :empty-text="dashboardTaskEmptyText"
                   @sort-change="onDashboardTaskSortChange"
                   @row-click="handleTicketRowClick"
                 >
@@ -249,12 +255,12 @@
                     </template>
                   </el-table-column>
                 </el-table>
-                <div v-if="dashboardTasks.length > dashboardTaskPageSize" class="dashboard-pagination">
+                <div v-if="filteredDashboardTasks.length > dashboardTaskPageSize" class="dashboard-pagination">
                   <el-pagination
                     background
                     small
                     layout="total, prev, pager, next"
-                    :total="dashboardTasks.length"
+                    :total="filteredDashboardTasks.length"
                     :page-size="dashboardTaskPageSize"
                     v-model:current-page="dashboardTaskPage"
                   />
@@ -262,9 +268,19 @@
               </el-card>
 
               <el-card class="dashboard-panel dashboard-dynamics">
-                <template #header><div class="dashboard-panel-title">我的动态</div></template>
-                <div v-if="(dashboard.my_dynamics || []).length > 0" class="dashboard-dynamics-list">
-                  <div v-for="item in dashboard.my_dynamics" :key="item.id" class="dynamic-compact">
+                <template #header>
+                  <div class="dashboard-card-head dashboard-dynamics-head">
+                    <div class="dashboard-panel-title">我的动态</div>
+                    <el-switch
+                      v-model="dashboardDynamicsOnlyMine"
+                      inline-prompt
+                      active-text="只看我参与"
+                      inactive-text="全部"
+                    />
+                  </div>
+                </template>
+                <div v-if="dashboardVisibleDynamics.length > 0" class="dashboard-dynamics-list">
+                  <div v-for="item in dashboardVisibleDynamics" :key="item.id" class="dynamic-compact">
                     <div class="dynamic-compact-line1">
                       <span class="dynamic-compact-ref">#{{ item.ticket_id }}</span>
                       <span class="dynamic-compact-title">{{ item.ticket_title }}</span>
@@ -273,21 +289,26 @@
                     <div class="dynamic-compact-line2">{{ item.editor_name }} · {{ item.summary }}</div>
                   </div>
                 </div>
-                <el-empty v-else description="暂无项目动态" :image-size="72" />
+                <el-empty v-else :description="dashboardDynamicsEmptyText" :image-size="72" />
               </el-card>
             </div>
 
             <div class="dashboard-column dashboard-right-column">
               <el-card class="dashboard-panel dashboard-bug-card">
                 <template #header>
-                  <div class="dashboard-panel-title">
-                    {{
-                      dashboardViewMode === "created"
-                        ? "我创建的BUG"
-                        : dashboardViewMode === "related"
-                          ? "和我有关的BUG"
-                          : "待我处理BUG"
-                    }}
+                  <div class="dashboard-card-head">
+                    <div class="dashboard-panel-title">
+                      {{
+                        dashboardViewMode === "created"
+                          ? "我创建的BUG"
+                          : dashboardViewMode === "related"
+                            ? "和我有关的BUG"
+                            : "待我处理BUG"
+                      }}
+                    </div>
+                    <el-tag v-if="dashboardActiveFilterLabel" size="small" type="primary" effect="light">
+                      {{ dashboardActiveFilterLabel }}
+                    </el-tag>
                   </div>
                 </template>
                 <el-table
@@ -295,6 +316,7 @@
                   stripe
                   max-height="460"
                   class="clickable-ticket-table dashboard-main-table"
+                  :empty-text="dashboardBugEmptyText"
                   @sort-change="onDashboardBugSortChange"
                   @row-click="handleTicketRowClick"
                 >
@@ -350,12 +372,12 @@
                     </template>
                   </el-table-column>
                 </el-table>
-                <div v-if="dashboardBugs.length > dashboardBugPageSize" class="dashboard-pagination">
+                <div v-if="filteredDashboardBugs.length > dashboardBugPageSize" class="dashboard-pagination">
                   <el-pagination
                     background
                     small
                     layout="total, prev, pager, next"
-                    :total="dashboardBugs.length"
+                    :total="filteredDashboardBugs.length"
                     :page-size="dashboardBugPageSize"
                     v-model:current-page="dashboardBugPage"
                   />
@@ -363,29 +385,96 @@
               </el-card>
 
               <el-card class="dashboard-panel dashboard-other-info">
-                <template #header><div class="dashboard-panel-title">其他信息</div></template>
-                <el-descriptions :column="2" border size="small">
-                  <el-descriptions-item label="总工单">{{ dashboard.ticket_count || 0 }}</el-descriptions-item>
-                  <el-descriptions-item label="进行中">
-                    {{
-                      (dashboard.by_status?.["未开始"] || 0) +
-                      (dashboard.by_status?.["进行中"] || 0) +
-                      (dashboard.by_status?.["待处理"] || 0) +
-                      (dashboard.by_status?.["待验收"] || 0) +
-                      (dashboard.by_status?.["待测试"] || 0)
-                    }}
-                  </el-descriptions-item>
-                </el-descriptions>
+                <template #header>
+                  <div class="dashboard-overview-head">
+                    <div class="dashboard-panel-title">项目概览</div>
+                    <span class="dashboard-overview-scope">{{ dashboardScopeLabel }}</span>
+                  </div>
+                </template>
+                <div class="dashboard-overview-kpis">
+                  <div
+                    class="dashboard-overview-kpi dashboard-overview-kpi-action"
+                    title="查看全部状态"
+                    @click="onDashboardKpiFilterClick('all')"
+                  >
+                    <div class="dashboard-overview-kpi-label">总工单</div>
+                    <div class="dashboard-overview-kpi-value">{{ dashboardTotalTickets }}</div>
+                  </div>
+                  <div
+                    class="dashboard-overview-kpi dashboard-overview-kpi-action"
+                    :class="{ 'is-active-filter': dashboardQuickFilterMode === 'pending' }"
+                    title="筛选未完成状态"
+                    @click="onDashboardKpiFilterClick('pending')"
+                  >
+                    <div class="dashboard-overview-kpi-label">未完成(项目)</div>
+                    <div class="dashboard-overview-kpi-value">{{ dashboardPendingCount }}</div>
+                  </div>
+                  <div
+                    class="dashboard-overview-kpi dashboard-overview-kpi-action"
+                    :class="{ 'is-active-filter': dashboardQuickFilterMode === 'completed' }"
+                    title="筛选已完成状态"
+                    @click="onDashboardKpiFilterClick('completed')"
+                  >
+                    <div class="dashboard-overview-kpi-label">已完成(项目)</div>
+                    <div class="dashboard-overview-kpi-value">{{ dashboardCompletedCount }}</div>
+                  </div>
+                  <div
+                    class="dashboard-overview-kpi dashboard-overview-kpi-action"
+                    :class="{ 'is-active-filter': !!dashboardActiveFilterLabel }"
+                    title="点击清除筛选"
+                    @click="onDashboardVisibleKpiClick"
+                  >
+                    <div class="dashboard-overview-kpi-label">当前视图</div>
+                    <div class="dashboard-overview-kpi-value">{{ dashboardVisibleTicketCount }}</div>
+                  </div>
+                </div>
+                <div v-if="dashboardActiveFilterLabel" class="dashboard-status-filter-bar">
+                  <span class="dashboard-status-filter-text">已按状态筛选：</span>
+                  <el-tag closable size="small" @close="clearDashboardStatusFilter">{{ dashboardActiveFilterLabel }}</el-tag>
+                </div>
+                <div class="dashboard-risk-split">
+                  <span class="dashboard-risk-split-label">风险提醒</span>
+                  <el-tag
+                    size="small"
+                    type="danger"
+                    effect="light"
+                    class="dashboard-risk-tag"
+                    :class="{ 'is-active': dashboardRiskFilterMode === 'overdue' }"
+                    @click="onDashboardRiskFilterClick('overdue')"
+                  >
+                    已逾期 {{ dashboardOverdueCount }}
+                  </el-tag>
+                  <el-tag
+                    size="small"
+                    type="warning"
+                    effect="light"
+                    class="dashboard-risk-tag"
+                    :class="{ 'is-active': dashboardRiskFilterMode === 'due_24h' }"
+                    @click="onDashboardRiskFilterClick('due_24h')"
+                  >
+                    24h内到期 {{ dashboardDueSoon24hCount }}
+                  </el-tag>
+                </div>
                 <el-table
-                  class="mt8"
-                  :data="Object.entries(dashboard.by_status || {}).map(([status, count]) => ({ status, count }))"
+                  class="mt8 dashboard-status-table"
+                  :data="dashboardStatusRows"
                   size="small"
                   stripe
                   max-height="220"
+                  :row-class-name="dashboardStatusRowClassName"
+                  @row-click="onDashboardStatusRowClick"
                 >
-                  <el-table-column prop="status" label="状态" width="150" />
-                  <el-table-column prop="count" label="数量" />
+                  <el-table-column prop="status" label="状态" width="120">
+                    <template #default="scope">
+                      <el-tag size="small" effect="light" :type="getDashboardStatusTagType(scope.row.status)">
+                        {{ scope.row.status }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="count" label="数量" width="88" />
+                  <el-table-column prop="ratioLabel" label="占比" />
                 </el-table>
+                <div class="dashboard-status-tip">点击状态可联动筛选左右工单列表</div>
               </el-card>
             </div>
           </div>
@@ -2781,11 +2870,58 @@ const DASHBOARD_PRIORITY_SORT_ORDER = {
   高: 2,
   紧急: 3,
 };
+const DASHBOARD_PENDING_STATUSES = ["未开始", "进行中", "待处理", "待验收", "待测试"];
 const dashboardTaskSort = reactive({ prop: "", order: "" });
 const dashboardBugSort = reactive({ prop: "", order: "" });
-const dashboardTaskIdSet = computed(() => new Set((dashboardTasks.value || []).map((item) => item.id)));
-const sortedDashboardTasks = computed(() => sortDashboardTickets(dashboardTasks.value || [], dashboardTaskSort));
-const sortedDashboardBugs = computed(() => sortDashboardTickets(dashboardBugs.value || [], dashboardBugSort));
+const dashboardDynamicsOnlyMine = ref(false);
+const dashboardStatusFilter = ref("");
+const dashboardQuickFilterMode = ref("");
+const dashboardRiskFilterMode = ref("");
+const dashboardActiveStatuses = computed(() => {
+  const status = String(dashboardStatusFilter.value || "").trim();
+  if (status) return new Set([status]);
+  if (dashboardQuickFilterMode.value === "pending") return new Set(DASHBOARD_PENDING_STATUSES);
+  if (dashboardQuickFilterMode.value === "completed") return new Set(["已完成"]);
+  return null;
+});
+const dashboardActiveFilterLabel = computed(() => {
+  const status = String(dashboardStatusFilter.value || "").trim();
+  if (status) return status;
+  if (dashboardQuickFilterMode.value === "pending") return "未完成";
+  if (dashboardQuickFilterMode.value === "completed") return "已完成";
+  if (dashboardRiskFilterMode.value === "overdue") return "已逾期";
+  if (dashboardRiskFilterMode.value === "due_24h") return "24h内到期";
+  return "";
+});
+const dashboardAllDynamics = computed(() => dashboard.my_dynamics || []);
+const dashboardVisibleDynamics = computed(() => {
+  const list = dashboardAllDynamics.value;
+  if (!dashboardDynamicsOnlyMine.value) return list;
+  const mineNames = new Set([String(user?.display_name || "").trim(), String(user?.username || "").trim()].filter(Boolean));
+  return list.filter((item) => mineNames.has(String(item?.editor_name || "").trim()));
+});
+const dashboardDynamicsEmptyText = computed(() =>
+  dashboardDynamicsOnlyMine.value ? "暂无你参与的动态（可切换为“全部”查看）" : "暂无项目动态",
+);
+const filteredDashboardTasks = computed(() => {
+  const activeStatuses = dashboardActiveStatuses.value;
+  const list = dashboardTasks.value || [];
+  const byStatus = !activeStatuses || !activeStatuses.size ? list : list.filter((item) => activeStatuses.has(String(item?.status || "")));
+  if (dashboardRiskFilterMode.value === "overdue") return byStatus.filter((item) => isTicketOverdue(item));
+  if (dashboardRiskFilterMode.value === "due_24h") return byStatus.filter((item) => isTicketDueWithin24h(item));
+  return byStatus;
+});
+const filteredDashboardBugs = computed(() => {
+  const activeStatuses = dashboardActiveStatuses.value;
+  const list = dashboardBugs.value || [];
+  const byStatus = !activeStatuses || !activeStatuses.size ? list : list.filter((item) => activeStatuses.has(String(item?.status || "")));
+  if (dashboardRiskFilterMode.value === "overdue") return byStatus.filter((item) => isTicketOverdue(item));
+  if (dashboardRiskFilterMode.value === "due_24h") return byStatus.filter((item) => isTicketDueWithin24h(item));
+  return byStatus;
+});
+const dashboardTaskIdSet = computed(() => new Set((filteredDashboardTasks.value || []).map((item) => item.id)));
+const sortedDashboardTasks = computed(() => sortDashboardTickets(filteredDashboardTasks.value || [], dashboardTaskSort));
+const sortedDashboardBugs = computed(() => sortDashboardTickets(filteredDashboardBugs.value || [], dashboardBugSort));
 const sortedPagedDashboardTasks = computed(() => {
   const start = (dashboardTaskPage.value - 1) * dashboardTaskPageSize;
   return sortedDashboardTasks.value.slice(start, start + dashboardTaskPageSize);
@@ -2795,10 +2931,76 @@ const sortedPagedDashboardBugs = computed(() => {
   return sortedDashboardBugs.value.slice(start, start + dashboardBugPageSize);
 });
 const hasTaskHierarchyInView = computed(() =>
-  (dashboardTasks.value || []).some((item) => {
+  (filteredDashboardTasks.value || []).some((item) => {
     const parentId = Number(item?.parent_task_id || 0);
     return parentId > 0 && dashboardTaskIdSet.value.has(parentId);
   }),
+);
+const dashboardScopeLabel = computed(() => {
+  if (dashboardViewMode.value === "created") return "统计口径：我创建的单";
+  if (dashboardViewMode.value === "related") return "统计口径：和我有关的单";
+  return "统计口径：待我处理";
+});
+const dashboardTotalTickets = computed(() => Number(dashboard?.ticket_count || 0));
+const dashboardCompletedCount = computed(() => Number(dashboard?.by_status?.["已完成"] || 0));
+const dashboardPendingCount = computed(() =>
+  DASHBOARD_PENDING_STATUSES.reduce((sum, status) => sum + Number(dashboard?.by_status?.[status] || 0), 0),
+);
+const dashboardVisibleTicketCount = computed(() => (dashboardTasks.value || []).length + (dashboardBugs.value || []).length);
+const dashboardVisibleTickets = computed(() => [...(filteredDashboardTasks.value || []), ...(filteredDashboardBugs.value || [])]);
+const dashboardOverdueCount = computed(() =>
+  dashboardVisibleTickets.value.reduce((sum, ticket) => (isTicketOverdue(ticket) ? sum + 1 : sum), 0),
+);
+const dashboardDueSoon24hCount = computed(() =>
+  dashboardVisibleTickets.value.reduce((sum, ticket) => (isTicketDueWithin24h(ticket) ? sum + 1 : sum), 0),
+);
+const dashboardTaskEmptyText = computed(() => {
+  if (!dashboardTasks.value?.length) return "暂无需求数据";
+  if (dashboardActiveFilterLabel.value) return `当前筛选“${dashboardActiveFilterLabel.value}”下暂无需求`;
+  return "暂无需求数据";
+});
+const dashboardBugEmptyText = computed(() => {
+  if (!dashboardBugs.value?.length) return "暂无BUG数据";
+  if (dashboardActiveFilterLabel.value) return `当前筛选“${dashboardActiveFilterLabel.value}”下暂无BUG`;
+  return "暂无BUG数据";
+});
+const dashboardStatusRows = computed(() => {
+  const baseList = [...(dashboardTasks.value || []), ...(dashboardBugs.value || [])];
+  const total = baseList.length;
+  const counts = {};
+  for (const item of baseList) {
+    const status = String(item?.status || "").trim() || "未知";
+    counts[status] = (counts[status] || 0) + 1;
+  }
+  const knownStatuses = Object.keys(DASHBOARD_STATUS_SORT_ORDER);
+  const extraStatuses = Object.keys(counts).filter((status) => !knownStatuses.includes(status)).sort((a, b) => a.localeCompare(b));
+  const orderedStatuses = [...knownStatuses, ...extraStatuses];
+  return orderedStatuses
+    .map((status) => {
+      const count = Number(counts[status] || 0);
+      const ratio = total > 0 ? (count / total) * 100 : 0;
+      return {
+        status,
+        count,
+        ratioLabel: `${ratio.toFixed(1)}%`,
+      };
+    })
+    .filter((row) => row.count > 0);
+});
+
+watch(
+  () => filteredDashboardTasks.value.length,
+  (len) => {
+    const totalPages = Math.max(1, Math.ceil(len / dashboardTaskPageSize));
+    if (dashboardTaskPage.value > totalPages) dashboardTaskPage.value = totalPages;
+  },
+);
+watch(
+  () => filteredDashboardBugs.value.length,
+  (len) => {
+    const totalPages = Math.max(1, Math.ceil(len / dashboardBugPageSize));
+    if (dashboardBugPage.value > totalPages) dashboardBugPage.value = totalPages;
+  },
 );
 
 function parseSortableTime(value) {
@@ -2849,6 +3051,63 @@ function onDashboardBugSortChange({ prop, order }) {
   dashboardBugSort.prop = prop || "";
   dashboardBugSort.order = order || "";
   dashboardBugPage.value = 1;
+}
+
+function onDashboardStatusRowClick(row) {
+  const status = String(row?.status || "").trim();
+  if (!status) return;
+  dashboardQuickFilterMode.value = "";
+  dashboardRiskFilterMode.value = "";
+  dashboardStatusFilter.value = dashboardStatusFilter.value === status ? "" : status;
+  dashboardTaskPage.value = 1;
+  dashboardBugPage.value = 1;
+}
+
+function clearDashboardStatusFilter() {
+  dashboardStatusFilter.value = "";
+  dashboardQuickFilterMode.value = "";
+  dashboardRiskFilterMode.value = "";
+  dashboardTaskPage.value = 1;
+  dashboardBugPage.value = 1;
+}
+
+function onDashboardKpiFilterClick(nextMode) {
+  if (nextMode === "all") {
+    clearDashboardStatusFilter();
+    return;
+  }
+  if (dashboardQuickFilterMode.value === nextMode) {
+    clearDashboardStatusFilter();
+    return;
+  }
+  dashboardStatusFilter.value = "";
+  dashboardRiskFilterMode.value = "";
+  dashboardQuickFilterMode.value = nextMode;
+  dashboardTaskPage.value = 1;
+  dashboardBugPage.value = 1;
+}
+
+function onDashboardRiskFilterClick(nextMode) {
+  if (dashboardRiskFilterMode.value === nextMode) {
+    clearDashboardStatusFilter();
+    return;
+  }
+  dashboardStatusFilter.value = "";
+  dashboardQuickFilterMode.value = "";
+  dashboardRiskFilterMode.value = nextMode;
+  dashboardTaskPage.value = 1;
+  dashboardBugPage.value = 1;
+}
+
+function onDashboardVisibleKpiClick() {
+  if (!dashboardActiveFilterLabel.value) return;
+  clearDashboardStatusFilter();
+}
+
+function dashboardStatusRowClassName({ row }) {
+  const status = String(row?.status || "");
+  const activeStatuses = dashboardActiveStatuses.value;
+  return activeStatuses?.has(status) ? "dashboard-status-row-active" : "";
 }
 const DESCRIPTION_COLORS = [
   { label: "默认", value: "#303133" },
@@ -3227,10 +3486,22 @@ async function onTicketFlowAction(action) {
 function isTicketOverdue(ticket) {
   const endTimeRaw = ticket?.end_time;
   if (!endTimeRaw) return false;
-  if ((ticket?.status || "") === "待验收") return false;
+  const status = String(ticket?.status || "");
+  if (status === "待验收" || status === "已完成") return false;
   const endTime = new Date(endTimeRaw);
   if (Number.isNaN(endTime.getTime())) return false;
   return endTime.getTime() < Date.now();
+}
+
+function isTicketDueWithin24h(ticket) {
+  const endTimeRaw = ticket?.end_time;
+  if (!endTimeRaw) return false;
+  const status = String(ticket?.status || "");
+  if (status === "待验收" || status === "已完成") return false;
+  const endTime = new Date(endTimeRaw);
+  if (Number.isNaN(endTime.getTime())) return false;
+  const diffMs = endTime.getTime() - Date.now();
+  return diffMs >= 0 && diffMs <= 24 * 60 * 60 * 1000;
 }
 
 function getDashboardStatusTagType(status) {
@@ -3350,6 +3621,15 @@ async function copyTicketId(ticketId) {
 
 function onDashboardViewModeChange(nextMode) {
   dashboardViewMode.value = nextMode || "current";
+  dashboardStatusFilter.value = "";
+  dashboardQuickFilterMode.value = "";
+  dashboardRiskFilterMode.value = "";
+  dashboardTaskSort.prop = "";
+  dashboardTaskSort.order = "";
+  dashboardBugSort.prop = "";
+  dashboardBugSort.order = "";
+  dashboardTaskPage.value = 1;
+  dashboardBugPage.value = 1;
 }
 
 function onProjectHubViewModeChange(nextMode) {
@@ -4443,6 +4723,119 @@ onUnmounted(() => {
 
 .dashboard-other-info {
   min-height: 360px;
+}
+
+.dashboard-overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dashboard-dynamics-head :deep(.el-switch__label) {
+  color: #909399;
+  font-size: 12px;
+}
+
+.dashboard-overview-scope {
+  font-size: 12px;
+  color: #909399;
+}
+
+.dashboard-overview-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-overview-kpi {
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fafcff;
+}
+
+.dashboard-overview-kpi-action {
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.dashboard-overview-kpi-action:hover {
+  border-color: #d9ecff;
+  background: #f2f8ff;
+}
+
+.dashboard-overview-kpi-action.is-active-filter {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.dashboard-overview-kpi-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.dashboard-overview-kpi-value {
+  margin-top: 6px;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.dashboard-status-filter-bar {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-status-filter-text {
+  font-size: 12px;
+  color: #606266;
+}
+
+.dashboard-risk-split {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-risk-split-label {
+  font-size: 12px;
+  color: #606266;
+}
+
+.dashboard-risk-tag {
+  cursor: pointer;
+  user-select: none;
+}
+
+.dashboard-risk-tag.is-active {
+  outline: 1px solid currentColor;
+  font-weight: 600;
+}
+
+.dashboard-status-table :deep(.el-table__body tr) {
+  cursor: pointer;
+}
+
+.dashboard-status-table :deep(.el-table__body tr.dashboard-status-row-active > td) {
+  background: #ecf5ff !important;
+}
+
+.dashboard-status-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
 }
 
 @media (max-width: 1100px) {
