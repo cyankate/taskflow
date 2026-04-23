@@ -1,5 +1,5 @@
 <template>
-  <section v-show="activeTab === 'wiki'">
+  <section v-show="activeTab === 'wiki'" class="wiki-page-shell">
     <el-card class="wiki-card">
       <template #header>
         <div class="wiki-card-head">
@@ -182,6 +182,12 @@ const {
 </script>
 
 <style scoped>
+.wiki-page-shell {
+  background: #f6f8fc;
+  border-radius: 10px;
+  padding: 10px;
+}
+
 .wiki-card {
   min-height: 620px;
   padding-bottom: 8px;

@@ -1,5 +1,5 @@
 <template>
-  <section v-show="activeTab === 'project_hub'">
+  <section v-show="activeTab === 'project_hub'" class="project-hub-page-shell">
     <div class="project-hub-main">
       <div class="project-hub-main-column">
         <el-card class="project-hub-tickets-card">
@@ -420,6 +420,12 @@ const {
 </script>
 
 <style scoped>
+.project-hub-page-shell {
+  background: #f6f8fc;
+  border-radius: 10px;
+  padding: 10px;
+}
+
 .project-hub-tickets-card {
   position: relative;
 }

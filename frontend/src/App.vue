@@ -1148,6 +1148,8 @@ useEditorSelectionSync({
 <style>
 .page {
   padding: 18px;
+  min-height: 100vh;
+  background: #f3f5f9;
 }
 
 .login-card {
@@ -1162,6 +1164,10 @@ useEditorSelectionSync({
 }
 
 .topbar {
+  background: #f6f8fc;
+  border: 1px solid #dfe4ec;
+  border-radius: 10px;
+  padding: 10px 12px;
   justify-content: flex-start;
   gap: 12px;
 }
@@ -1233,8 +1239,8 @@ useEditorSelectionSync({
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #fff;
-  border: 1px solid #ebeef5;
+  background: #f5f7fb;
+  border: 1px solid #dfe4ec;
   border-radius: 10px;
   padding: 10px;
   height: fit-content;

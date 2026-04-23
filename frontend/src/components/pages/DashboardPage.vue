@@ -1,5 +1,5 @@
 <template>
-  <section v-show="activeTab === 'dashboard'">
+  <section v-show="activeTab === 'dashboard'" class="dashboard-page-shell">
     <div class="dashboard-view-toggle-row">
       <el-radio-group
         :model-value="dashboardViewMode"
@@ -407,6 +407,12 @@ const {
 </script>
 
 <style scoped>
+.dashboard-page-shell {
+  background: #f6f8fc;
+  border-radius: 10px;
+  padding: 10px;
+}
+
 .dashboard-view-toggle-row {
   display: flex;
   justify-content: flex-end;
