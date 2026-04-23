@@ -794,8 +794,8 @@ const {
 
 <style scoped>
 .ticket-detail-page {
-  min-height: calc(100vh - 180px);
-  padding: 8px 4px 20px;
+  min-height: calc(100vh - 140px);
+  padding: 8px 4px 24px;
   overflow: auto;
   --detail-side-top: 10px;
 }
@@ -805,8 +805,10 @@ const {
   justify-content: space-between;
   align-items: center;
   gap: 14px;
-  padding: 8px 0 12px;
-  border-bottom: 1px solid #e8edf5;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafd;
 }
 
 .ticket-detail-title {
@@ -868,39 +870,47 @@ const {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 16px;
-  margin-top: 12px;
-  align-items: start;
+  margin-top: 10px;
+  align-items: stretch;
+  min-height: calc(100vh - 240px);
 }
 
 .ticket-detail-main {
   min-width: 0;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e5eaf2;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0 14px 14px;
 }
 
 .ticket-detail-side {
   position: sticky;
   top: var(--detail-side-top);
-  align-self: start;
+  align-self: stretch;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: calc(100vh - (var(--detail-side-top) * 2));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 4px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .detail-stream-section {
   padding: 12px 0;
-  border-bottom: 1px solid #edf1f7;
+  border-bottom: 1px solid #e5eaf2;
 }
 
 .detail-stream-section:first-child {
-  padding-top: 4px;
+  padding-top: 10px;
 }
 
 .detail-stream-section:last-child {
   border-bottom: none;
-  padding-bottom: 0;
+  padding-bottom: 4px;
 }
 
 .detail-side-block {
@@ -996,8 +1006,8 @@ const {
 }
 
 .ticket-description-editor {
-  min-height: 180px;
-  padding: 10px 12px;
+  min-height: 340px;
+  padding: 14px 16px;
   border: 1px solid #d8e4f6;
   border-radius: 8px;
   background: #fff;
@@ -1010,8 +1020,8 @@ const {
   color: #606266;
   line-height: 1.75;
   font-size: 14px;
-  min-height: 180px;
-  padding: 10px 12px;
+  min-height: 340px;
+  padding: 14px 16px;
   border: 1px solid #eef2f8;
   border-radius: 8px;
   background: #fcfdff;
@@ -1584,11 +1594,17 @@ const {
 @media (max-width: 1280px) {
   .ticket-detail-layout {
     grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .ticket-detail-main {
+    min-height: auto;
   }
 
   .ticket-detail-side {
     position: static;
     top: auto;
+    min-height: auto;
     max-height: none;
     overflow: visible;
     padding-right: 0;
