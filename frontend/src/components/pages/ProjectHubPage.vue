@@ -1,5 +1,5 @@
 <template>
-  <section v-show="activeTab === 'project_hub'" class="project-hub-page-shell">
+  <section v-show="activeTab === 'project_hub'">
     <div class="project-hub-main">
       <div class="project-hub-main-column">
         <el-card class="project-hub-tickets-card">
@@ -420,12 +420,6 @@ const {
 </script>
 
 <style scoped>
-.project-hub-page-shell {
-  background: #f6f8fc;
-  border-radius: 10px;
-  padding: 10px;
-}
-
 .project-hub-tickets-card {
   position: relative;
 }
@@ -453,7 +447,7 @@ const {
   border: 1px solid #d4d9e1;
   background: #f8fafc;
   color: #64748b;
-  font-size: 12px;
+  font-size: 11px;
   box-shadow: none;
 }
 
@@ -494,14 +488,20 @@ const {
   width: 100%;
 }
 
+.dashboard-panel-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+}
+
 .project-hub-tickets-head {
   flex-wrap: wrap;
   gap: 8px;
 }
 
 .project-hub-muted {
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .project-hub-filter-panel {
@@ -588,7 +588,9 @@ const {
 }
 
 .project-hub-ticket-table :deep(.el-table__cell) {
-  font-size: 13px;
+  font-size: 12px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .project-kanban {
@@ -612,7 +614,7 @@ const {
 
 .project-kanban-column-head {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   padding: 8px 10px;
   border-bottom: 1px solid #eef1f4;
   background: #fff;
@@ -650,8 +652,8 @@ const {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .project-kanban-priority {
@@ -720,14 +722,14 @@ const {
 
 .dynamic-compact-ref {
   flex-shrink: 0;
-  color: #909399;
+  color: #94a3b8;
   font-family: ui-monospace, monospace;
 }
 
 .dynamic-compact-title {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 500;
   color: #303133;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -736,7 +738,7 @@ const {
 
 .dynamic-compact-time {
   flex-shrink: 0;
-  color: #909399;
+  color: #94a3b8;
   font-size: 11px;
 }
 
@@ -760,7 +762,7 @@ const {
 }
 
 .version-manage-collapse :deep(.el-collapse-item__header) {
-  font-size: 12px;
+  font-size: 11px;
   color: #6b7280;
 }
 
@@ -790,14 +792,14 @@ const {
 }
 
 .report-metric-label {
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .report-metric-value {
   margin-top: 3px;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   color: #303133;
 }
 
@@ -809,7 +811,7 @@ const {
 
 .stats-subtitle {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   margin-bottom: 6px;
   color: #606266;
 }
@@ -862,8 +864,8 @@ const {
   border-radius: 6px;
   background: #f9fafb;
   color: #606266;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   min-height: 32px;
   display: flex;
   align-items: center;
@@ -897,7 +899,7 @@ const {
 .density-cell-date {
   font-size: 11px;
   color: #6b7280;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .density-task-chip {
@@ -925,7 +927,7 @@ const {
 .density-task-more {
   font-size: 11px;
   color: #1d4ed8;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .density-day-empty {
@@ -936,8 +938,8 @@ const {
 
 .density-legend {
   margin-top: 6px;
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 @media (max-width: 1200px) {

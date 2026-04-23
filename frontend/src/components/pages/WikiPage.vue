@@ -1,5 +1,5 @@
 <template>
-  <section v-show="activeTab === 'wiki'" class="wiki-page-shell">
+  <section v-show="activeTab === 'wiki'">
     <el-card class="wiki-card">
       <template #header>
         <div class="wiki-card-head">
@@ -182,12 +182,6 @@ const {
 </script>
 
 <style scoped>
-.wiki-page-shell {
-  background: #f6f8fc;
-  border-radius: 10px;
-  padding: 10px;
-}
-
 .wiki-card {
   min-height: 620px;
   padding-bottom: 8px;
@@ -208,6 +202,18 @@ const {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.dashboard-panel-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.clickable-ticket-table :deep(.el-table__cell) {
+  font-size: 12px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .wiki-category-bar {
@@ -336,8 +342,8 @@ const {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
-  color: #606266;
-  font-size: 13px;
+  color: #94a3b8;
+  font-size: 11px;
 }
 
 .wiki-detail-attachments {
@@ -359,8 +365,8 @@ const {
 }
 
 .wiki-detail-attachments-count {
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .wiki-detail-attachment-list {
@@ -369,12 +375,12 @@ const {
 
 .wiki-detail-attachment-empty {
   margin-top: 4px;
-  font-size: 12px;
-  color: #a0a7b4;
+  font-size: 11px;
+  color: #9ca3af;
 }
 
 .wiki-detail-attachments :deep(.ticket-attachments-title) {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
 }
 

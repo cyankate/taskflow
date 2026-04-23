@@ -1,4 +1,4 @@
-import { nextTick, reactive, ref, watch } from "vue";
+import { nextTick, reactive, ref, unref, watch } from "vue";
 
 const DESCRIPTION_COLORS = [
   { label: "默认", value: "#303133" },
@@ -29,6 +29,7 @@ export function useTicketDetailPageState({
   ticketDialog,
   ticketDetail,
   meta,
+  users,
   user,
   activeTab,
   onDetailProjectChange,
@@ -253,6 +254,10 @@ export function useTicketDetailPageState({
       ctx = getDescriptionSelectionContext();
     }
     if (!ctx) return;
+    if (options.requireSelection && ctx.range.collapsed) {
+      ElMessage.warning("请先选中文本");
+      return;
+    }
     editor.focus();
     if (command === "undo" || command === "redo") {
       document.execCommand(command, false);
@@ -312,7 +317,7 @@ export function useTicketDetailPageState({
     onDetailProjectChange(ticketDialog.form.project_id);
   }
 
-  function getExecutorCandidates(ticketType, subType) {
+  function getExecutorPositionCandidates(ticketType, subType) {
     if (ticketType === "BUG单") return ["测试", "前端程序", "后端程序"];
     if (subType === "策划需求") return ["策划"];
     if (subType === "程序需求") return ["前端程序", "后端程序"];
@@ -321,10 +326,23 @@ export function useTicketDetailPageState({
     return meta.positions || [];
   }
 
+  function getExecutorCandidates(ticketType, subType) {
+    const positions = getExecutorPositionCandidates(ticketType, subType);
+    const positionSet = new Set((positions || []).map((item) => String(item || "").trim()).filter(Boolean));
+    const membersSource = unref(users);
+    const members = Array.isArray(membersSource) ? membersSource : [];
+    if (!positionSet.size) return members;
+    return members.filter((item) => positionSet.has(String(item?.position || "").trim()));
+  }
+
   function onTicketDialogSubTypeChange(nextSubType) {
     if (!nextSubType) return;
-    const candidates = getExecutorCandidates(ticketDialog.form.ticket_type, nextSubType);
-    if (!candidates.includes(ticketDialog.form.executor_position)) {
+    const currentExecutorId = String(ticketDialog.form.executor_id || "").trim();
+    if (!currentExecutorId) return;
+    const candidateIdSet = new Set(
+      getExecutorCandidates(ticketDialog.form.ticket_type, nextSubType).map((item) => String(item?.id || "").trim()),
+    );
+    if (!candidateIdSet.has(currentExecutorId)) {
       ticketDialog.form.executor_id = null;
     }
   }
@@ -468,14 +486,11 @@ export function useTicketDetailPageState({
     descriptionEditorRef,
     ticketDialogEditorRef,
     descriptionToolbarState,
-    syncTicketDialogEditorFromForm,
     onTicketDialogEditorInput,
     applyTicketDialogCommand,
     insertTicketDialogLink,
     renderDescriptionHtml,
-    sanitizeDescriptionHtml,
     normalizeColorValue,
-    normalizeDescriptionFontTags,
     normalizeWikiFontTags,
     syncDescriptionToolbarState,
     startDescriptionEdit,
@@ -493,7 +508,6 @@ export function useTicketDetailPageState({
     onTicketDialogSubTypeChange,
     onTicketFlowAction,
     isTicketOverdue,
-    isTicketDueWithin24h,
     getDeadlineHint,
     getDeadlineHintType,
     getWikiAttachmentCount,

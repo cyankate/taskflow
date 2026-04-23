@@ -67,14 +67,12 @@ export function useDashboardPageState({
   dashboardBugPageSize,
   user,
   isTicketOverdue,
-  isTicketDueWithin24h,
 }) {
   const dashboardTaskSort = reactive({ prop: "", order: "" });
   const dashboardBugSort = reactive({ prop: "", order: "" });
   const dashboardDynamicsOnlyMine = ref(false);
   const dashboardStatusFilter = ref("");
   const dashboardQuickFilterMode = ref("");
-  const dashboardRiskFilterMode = ref("");
 
   const dashboardActiveStatuses = computed(() => {
     const status = String(dashboardStatusFilter.value || "").trim();
@@ -89,8 +87,7 @@ export function useDashboardPageState({
     if (status) return status;
     if (dashboardQuickFilterMode.value === "pending") return "未完成";
     if (dashboardQuickFilterMode.value === "completed") return "已完成";
-    if (dashboardRiskFilterMode.value === "overdue") return "已逾期";
-    if (dashboardRiskFilterMode.value === "due_24h") return "24h内到期";
+    if (dashboardQuickFilterMode.value === "overdue") return "已逾期";
     return "";
   });
 
@@ -110,8 +107,7 @@ export function useDashboardPageState({
     const activeStatuses = dashboardActiveStatuses.value;
     const list = dashboardTasks.value || [];
     const byStatus = !activeStatuses || !activeStatuses.size ? list : list.filter((item) => activeStatuses.has(String(item?.status || "")));
-    if (dashboardRiskFilterMode.value === "overdue") return byStatus.filter((item) => isTicketOverdue(item));
-    if (dashboardRiskFilterMode.value === "due_24h") return byStatus.filter((item) => isTicketDueWithin24h(item));
+    if (dashboardQuickFilterMode.value === "overdue") return byStatus.filter((item) => isTicketOverdue(item));
     return byStatus;
   });
 
@@ -119,8 +115,7 @@ export function useDashboardPageState({
     const activeStatuses = dashboardActiveStatuses.value;
     const list = dashboardBugs.value || [];
     const byStatus = !activeStatuses || !activeStatuses.size ? list : list.filter((item) => activeStatuses.has(String(item?.status || "")));
-    if (dashboardRiskFilterMode.value === "overdue") return byStatus.filter((item) => isTicketOverdue(item));
-    if (dashboardRiskFilterMode.value === "due_24h") return byStatus.filter((item) => isTicketDueWithin24h(item));
+    if (dashboardQuickFilterMode.value === "overdue") return byStatus.filter((item) => isTicketOverdue(item));
     return byStatus;
   });
 
@@ -149,18 +144,19 @@ export function useDashboardPageState({
     if (dashboardViewMode.value === "related") return "统计口径：和我有关的单";
     return "统计口径：待我处理";
   });
-  const dashboardTotalTickets = computed(() => Number(dashboard?.ticket_count || 0));
-  const dashboardCompletedCount = computed(() => Number(dashboard?.by_status?.["已完成"] || 0));
-  const dashboardPendingCount = computed(() =>
-    DASHBOARD_PENDING_STATUSES.reduce((sum, status) => sum + Number(dashboard?.by_status?.[status] || 0), 0),
+  const dashboardModeScopedTickets = computed(() => [...(dashboardTasks.value || []), ...(dashboardBugs.value || [])]);
+  const dashboardTotalTickets = computed(() => dashboardModeScopedTickets.value.length);
+  const dashboardCompletedCount = computed(
+    () => dashboardModeScopedTickets.value.filter((item) => String(item?.status || "").trim() === "已完成").length,
   );
-  const dashboardVisibleTicketCount = computed(() => (dashboardTasks.value || []).length + (dashboardBugs.value || []).length);
+  const dashboardPendingCount = computed(
+    () =>
+      dashboardModeScopedTickets.value.filter((item) => DASHBOARD_PENDING_STATUSES.includes(String(item?.status || "").trim()))
+        .length,
+  );
   const dashboardVisibleTickets = computed(() => [...(filteredDashboardTasks.value || []), ...(filteredDashboardBugs.value || [])]);
   const dashboardOverdueCount = computed(() =>
     dashboardVisibleTickets.value.reduce((sum, ticket) => (isTicketOverdue(ticket) ? sum + 1 : sum), 0),
-  );
-  const dashboardDueSoon24hCount = computed(() =>
-    dashboardVisibleTickets.value.reduce((sum, ticket) => (isTicketDueWithin24h(ticket) ? sum + 1 : sum), 0),
   );
   const dashboardTaskEmptyText = computed(() => {
     if (!dashboardTasks.value?.length) return "暂无需求数据";
@@ -228,7 +224,6 @@ export function useDashboardPageState({
     const status = String(row?.status || "").trim();
     if (!status) return;
     dashboardQuickFilterMode.value = "";
-    dashboardRiskFilterMode.value = "";
     dashboardStatusFilter.value = dashboardStatusFilter.value === status ? "" : status;
     dashboardTaskPage.value = 1;
     dashboardBugPage.value = 1;
@@ -237,7 +232,6 @@ export function useDashboardPageState({
   function clearDashboardStatusFilter() {
     dashboardStatusFilter.value = "";
     dashboardQuickFilterMode.value = "";
-    dashboardRiskFilterMode.value = "";
     dashboardTaskPage.value = 1;
     dashboardBugPage.value = 1;
   }
@@ -252,27 +246,9 @@ export function useDashboardPageState({
       return;
     }
     dashboardStatusFilter.value = "";
-    dashboardRiskFilterMode.value = "";
     dashboardQuickFilterMode.value = nextMode;
     dashboardTaskPage.value = 1;
     dashboardBugPage.value = 1;
-  }
-
-  function onDashboardRiskFilterClick(nextMode) {
-    if (dashboardRiskFilterMode.value === nextMode) {
-      clearDashboardStatusFilter();
-      return;
-    }
-    dashboardStatusFilter.value = "";
-    dashboardQuickFilterMode.value = "";
-    dashboardRiskFilterMode.value = nextMode;
-    dashboardTaskPage.value = 1;
-    dashboardBugPage.value = 1;
-  }
-
-  function onDashboardVisibleKpiClick() {
-    if (!dashboardActiveFilterLabel.value) return;
-    clearDashboardStatusFilter();
   }
 
   function dashboardStatusRowClassName({ row }) {
@@ -317,7 +293,6 @@ export function useDashboardPageState({
   function resetDashboardFiltersAndSort() {
     dashboardStatusFilter.value = "";
     dashboardQuickFilterMode.value = "";
-    dashboardRiskFilterMode.value = "";
     dashboardTaskSort.prop = "";
     dashboardTaskSort.order = "";
     dashboardBugSort.prop = "";
@@ -360,7 +335,6 @@ export function useDashboardPageState({
   return {
     dashboardDynamicsOnlyMine,
     dashboardQuickFilterMode,
-    dashboardRiskFilterMode,
     dashboardActiveFilterLabel,
     dashboardVisibleDynamics,
     dashboardDynamicsEmptyText,
@@ -372,9 +346,7 @@ export function useDashboardPageState({
     dashboardTotalTickets,
     dashboardPendingCount,
     dashboardCompletedCount,
-    dashboardVisibleTicketCount,
     dashboardOverdueCount,
-    dashboardDueSoon24hCount,
     dashboardTaskEmptyText,
     dashboardBugEmptyText,
     dashboardStatusRows,
@@ -383,8 +355,6 @@ export function useDashboardPageState({
     onDashboardStatusRowClick,
     clearDashboardStatusFilter,
     onDashboardKpiFilterClick,
-    onDashboardRiskFilterClick,
-    onDashboardVisibleKpiClick,
     dashboardStatusRowClassName,
     isChildTask,
     getTaskRelationRole,
@@ -393,6 +363,5 @@ export function useDashboardPageState({
     getDashboardPriorityDotClass,
     getDashboardOwnerName,
     onDashboardViewModeChange,
-    resetDashboardFiltersAndSort,
   };
 }

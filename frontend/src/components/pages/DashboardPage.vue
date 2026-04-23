@@ -1,5 +1,5 @@
 <template>
-  <section v-show="activeTab === 'dashboard'" class="dashboard-page-shell">
+  <section v-show="activeTab === 'dashboard'">
     <div class="dashboard-view-toggle-row">
       <el-radio-group
         :model-value="dashboardViewMode"
@@ -41,7 +41,7 @@
           <el-table
             :data="sortedPagedDashboardTasks"
             stripe
-            max-height="420"
+            max-height="520"
             class="clickable-ticket-table dashboard-main-table"
             :empty-text="dashboardTaskEmptyText"
             @sort-change="onDashboardTaskSortChange"
@@ -179,7 +179,7 @@
           <el-table
             :data="sortedPagedDashboardBugs"
             stripe
-            max-height="420"
+            max-height="520"
             class="clickable-ticket-table dashboard-main-table"
             :empty-text="dashboardBugEmptyText"
             @sort-change="onDashboardBugSortChange"
@@ -252,7 +252,7 @@
         <el-card class="dashboard-panel dashboard-other-info">
           <template #header>
             <div class="dashboard-overview-head">
-              <div class="dashboard-panel-title">项目概览</div>
+              <div class="dashboard-panel-title">统计视图</div>
               <span class="dashboard-overview-scope">{{ dashboardScopeLabel }}</span>
             </div>
           </template>
@@ -284,41 +284,18 @@
               <div class="dashboard-overview-kpi-value">{{ dashboardCompletedCount }}</div>
             </div>
             <div
-              class="dashboard-overview-kpi dashboard-overview-kpi-action"
-              :class="{ 'is-active-filter': !!dashboardActiveFilterLabel }"
-              title="点击清除筛选"
-              @click="onDashboardVisibleKpiClick"
+              class="dashboard-overview-kpi dashboard-overview-kpi-action dashboard-overview-kpi-overdue"
+              :class="{ 'is-active-filter': dashboardQuickFilterMode === 'overdue' }"
+              title="筛选已逾期工单"
+              @click="onDashboardKpiFilterClick('overdue')"
             >
-              <div class="dashboard-overview-kpi-label">当前视图</div>
-              <div class="dashboard-overview-kpi-value">{{ dashboardVisibleTicketCount }}</div>
+              <div class="dashboard-overview-kpi-label">已逾期</div>
+              <div class="dashboard-overview-kpi-value">{{ dashboardOverdueCount }}</div>
             </div>
           </div>
           <div v-if="dashboardActiveFilterLabel" class="dashboard-status-filter-bar">
             <span class="dashboard-status-filter-text">已按状态筛选：</span>
             <el-tag closable size="small" @close="clearDashboardStatusFilter">{{ dashboardActiveFilterLabel }}</el-tag>
-          </div>
-          <div class="dashboard-risk-split">
-            <span class="dashboard-risk-split-label">风险提醒</span>
-            <el-tag
-              size="small"
-              type="danger"
-              effect="light"
-              class="dashboard-risk-tag"
-              :class="{ 'is-active': dashboardRiskFilterMode === 'overdue' }"
-              @click="onDashboardRiskFilterClick('overdue')"
-            >
-              已逾期 {{ dashboardOverdueCount }}
-            </el-tag>
-            <el-tag
-              size="small"
-              type="warning"
-              effect="light"
-              class="dashboard-risk-tag"
-              :class="{ 'is-active': dashboardRiskFilterMode === 'due_24h' }"
-              @click="onDashboardRiskFilterClick('due_24h')"
-            >
-              24h内到期 {{ dashboardDueSoon24hCount }}
-            </el-tag>
           </div>
           <el-table
             class="mt8 dashboard-status-table"
@@ -394,25 +371,14 @@ const {
   dashboardQuickFilterMode,
   dashboardPendingCount,
   dashboardCompletedCount,
-  onDashboardVisibleKpiClick,
-  dashboardVisibleTicketCount,
+  dashboardOverdueCount,
   dashboardStatusRows,
   dashboardStatusRowClassName,
   onDashboardStatusRowClick,
-  dashboardRiskFilterMode,
-  onDashboardRiskFilterClick,
-  dashboardOverdueCount,
-  dashboardDueSoon24hCount,
 } = appCtx;
 </script>
 
 <style scoped>
-.dashboard-page-shell {
-  background: #f6f8fc;
-  border-radius: 10px;
-  padding: 10px;
-}
-
 .dashboard-view-toggle-row {
   display: flex;
   justify-content: flex-end;
@@ -454,12 +420,12 @@ const {
 }
 
 .dashboard-task-card {
-  min-height: 540px;
+  min-height: 640px;
   background: #ffffff;
 }
 
 .dashboard-bug-card {
-  min-height: 540px;
+  min-height: 640px;
   border-color: #f3f4f6;
   background: #ffffff;
 }
@@ -475,7 +441,8 @@ const {
   align-items: center;
   gap: 8px;
   padding-left: 8px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .dashboard-panel-title::before {
@@ -541,14 +508,14 @@ const {
 
 .dynamic-compact-ref {
   flex-shrink: 0;
-  color: #909399;
+  color: #94a3b8;
   font-family: ui-monospace, monospace;
 }
 
 .dynamic-compact-title {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 500;
   color: #303133;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -557,7 +524,7 @@ const {
 
 .dynamic-compact-time {
   flex-shrink: 0;
-  color: #909399;
+  color: #94a3b8;
   font-size: 11px;
 }
 
@@ -595,13 +562,13 @@ const {
 }
 
 .dashboard-dynamics-head :deep(.el-switch__label) {
-  color: #909399;
-  font-size: 12px;
+  color: #94a3b8;
+  font-size: 11px;
 }
 
 .dashboard-overview-scope {
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .dashboard-overview-kpis {
@@ -632,16 +599,25 @@ const {
   background: #f4f8ff;
 }
 
+.dashboard-overview-kpi-overdue {
+  border-color: #f4d6d6;
+  background: #fff8f8;
+}
+
+.dashboard-overview-kpi-overdue .dashboard-overview-kpi-value {
+  color: #b91c1c;
+}
+
 .dashboard-overview-kpi-label {
   font-size: 11px;
-  color: #909399;
+  color: #94a3b8;
 }
 
 .dashboard-overview-kpi-value {
   margin-top: 4px;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1;
-  font-weight: 600;
+  font-weight: 500;
   color: #1f2937;
 }
 
@@ -653,30 +629,8 @@ const {
 }
 
 .dashboard-status-filter-text {
-  font-size: 12px;
+  font-size: 11px;
   color: #606266;
-}
-
-.dashboard-risk-split {
-  margin-top: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dashboard-risk-split-label {
-  font-size: 12px;
-  color: #606266;
-}
-
-.dashboard-risk-tag {
-  cursor: pointer;
-  user-select: none;
-}
-
-.dashboard-risk-tag.is-active {
-  outline: 1px solid currentColor;
-  font-weight: 600;
 }
 
 .dashboard-status-table :deep(.el-table__body tr) {
@@ -689,8 +643,8 @@ const {
 
 .dashboard-status-tip {
   margin-top: 8px;
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .status-overdue-tag {
@@ -702,7 +656,9 @@ const {
 }
 
 .dashboard-main-table :deep(.el-table__cell) {
-  font-size: 13px;
+  font-size: 12px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .dashboard-main-table :deep(.el-table__body .el-table__cell:first-child .cell) {
@@ -761,7 +717,7 @@ const {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -789,7 +745,7 @@ const {
   padding: 0 6px;
   border-radius: 999px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -813,7 +769,7 @@ const {
 
 .dashboard-title-line {
   color: #303133;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.45;
   white-space: normal;
   word-break: break-word;
@@ -821,13 +777,13 @@ const {
 }
 
 .dashboard-title-text {
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .dashboard-task-relation {
   margin-top: 4px;
-  color: #909399;
-  font-size: 12px;
+  color: #94a3b8;
+  font-size: 11px;
   line-height: 1.4;
   white-space: normal;
   word-break: break-word;
@@ -839,7 +795,7 @@ const {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  font-weight: 600;
+  font-weight: 500;
   width: 100%;
 }
 
@@ -885,25 +841,25 @@ const {
 
 .dashboard-deadline-hint {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .dashboard-deadline-hint.normal {
-  color: #909399;
+  color: #94a3b8;
 }
 
 .dashboard-deadline-hint.soon {
   color: #e6a23c;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dashboard-deadline-hint.overdue {
   color: #f56c6c;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dashboard-deadline-hint.neutral {
-  color: #909399;
+  color: #94a3b8;
 }
 
 @media (max-width: 1366px) {

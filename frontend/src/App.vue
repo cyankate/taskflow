@@ -77,19 +77,6 @@
         </div>
       </el-header>
 
-      <el-alert
-        v-if="notification.overdue_count || notification.soon_due_count || notification.new_ticket_count"
-        type="warning"
-        show-icon
-        :closable="false"
-        class="mb12"
-      >
-        <template #title>
-          新工单 {{ notification.new_ticket_count }} 个，逾期 {{ notification.overdue_count }} 个，即将逾期
-          {{ notification.soon_due_count }} 个
-        </template>
-      </el-alert>
-
       <div class="main-layout">
         <aside class="side-nav">
           <button class="side-nav-item" :class="{ active: activeTab === 'dashboard' }" @click="handleSideNavClick('dashboard')">
@@ -778,7 +765,6 @@ const {
   onTicketDialogSubTypeChange,
   onTicketFlowAction,
   isTicketOverdue,
-  isTicketDueWithin24h,
   getDeadlineHint,
   getDeadlineHintType,
   getWikiAttachmentCount,
@@ -792,6 +778,7 @@ const {
   ticketDialog,
   ticketDetail,
   meta,
+  users,
   user,
   activeTab,
   onDetailProjectChange,
@@ -803,7 +790,6 @@ const {
 const {
   dashboardDynamicsOnlyMine,
   dashboardQuickFilterMode,
-  dashboardRiskFilterMode,
   dashboardActiveFilterLabel,
   dashboardVisibleDynamics,
   dashboardDynamicsEmptyText,
@@ -815,9 +801,7 @@ const {
   dashboardTotalTickets,
   dashboardPendingCount,
   dashboardCompletedCount,
-  dashboardVisibleTicketCount,
   dashboardOverdueCount,
-  dashboardDueSoon24hCount,
   dashboardTaskEmptyText,
   dashboardBugEmptyText,
   dashboardStatusRows,
@@ -826,8 +810,6 @@ const {
   onDashboardStatusRowClick,
   clearDashboardStatusFilter,
   onDashboardKpiFilterClick,
-  onDashboardRiskFilterClick,
-  onDashboardVisibleKpiClick,
   dashboardStatusRowClassName,
   isChildTask,
   getTaskRelationRole,
@@ -836,7 +818,6 @@ const {
   getDashboardPriorityDotClass,
   getDashboardOwnerName,
   onDashboardViewModeChange,
-  resetDashboardFiltersAndSort,
 } = useDashboardPageState({
   dashboard,
   dashboardViewMode,
@@ -848,7 +829,6 @@ const {
   dashboardBugPageSize,
   user,
   isTicketOverdue,
-  isTicketDueWithin24h,
 });
 const {
   onProjectHubViewModeChange,
@@ -960,15 +940,10 @@ provide("appCtx", {
   dashboardQuickFilterMode,
   dashboardPendingCount,
   dashboardCompletedCount,
-  onDashboardVisibleKpiClick,
-  dashboardVisibleTicketCount,
+  dashboardOverdueCount,
   dashboardStatusRows,
   dashboardStatusRowClassName,
   onDashboardStatusRowClick,
-  dashboardRiskFilterMode,
-  onDashboardRiskFilterClick,
-  dashboardOverdueCount,
-  dashboardDueSoon24hCount,
   openUserDialog,
   removeUser,
   openProjectDialog,
@@ -1149,7 +1124,8 @@ useEditorSelectionSync({
 .page {
   padding: 18px;
   min-height: 100vh;
-  background: #f3f5f9;
+  background: #f1f4f8;
+  color: #334155;
 }
 
 .login-card {
@@ -1164,10 +1140,10 @@ useEditorSelectionSync({
 }
 
 .topbar {
-  background: #f6f8fc;
-  border: 1px solid #dfe4ec;
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
   justify-content: flex-start;
   gap: 12px;
 }
@@ -1239,22 +1215,22 @@ useEditorSelectionSync({
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #f5f7fb;
-  border: 1px solid #dfe4ec;
+  background: #f3f6fb;
+  border: 1px solid #d8e0ea;
   border-radius: 10px;
-  padding: 10px;
+  padding: 11px;
   height: fit-content;
   position: sticky;
   top: 12px;
 }
 
 .side-nav-item {
-  border: 1px solid #e4e7ed;
+  border: 1px solid #dbe2ea;
   background: #fff;
-  color: #606266;
+  color: #475569;
   border-radius: 8px;
   height: 38px;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: inline-flex;
@@ -1270,22 +1246,23 @@ useEditorSelectionSync({
 }
 
 .side-nav-item:hover {
-  border-color: #c6e2ff;
-  color: #409eff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+  background: #f8fbff;
 }
 
 .side-nav-item.active {
-  border-color: #409eff;
-  background: #ecf5ff;
-  color: #409eff;
-  font-weight: 600;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 500;
 }
 
 .side-version-group {
-  border: 1px solid #ebeef5;
+  border: 1px solid #dbe2ea;
   border-radius: 8px;
   padding: 8px;
-  background: #fafafa;
+  background: #f8fafd;
 }
 
 .side-version-title {
@@ -1301,9 +1278,9 @@ useEditorSelectionSync({
 }
 
 .side-version-btn {
-  border: 1px solid #dcdfe6;
+  border: 1px solid #dbe2ea;
   background: #fff;
-  color: #606266;
+  color: #475569;
   border-radius: 999px;
   height: 26px;
   padding: 0 10px;
@@ -1312,9 +1289,9 @@ useEditorSelectionSync({
 }
 
 .side-version-btn.active {
-  border-color: #409eff;
-  background: #ecf5ff;
-  color: #409eff;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .main-content-area {
@@ -1382,9 +1359,9 @@ useEditorSelectionSync({
   max-width: 100%;
 }
 
-.global-search-input :deep(.el-input__inner::placeholder),
-.global-search-input :deep(input::placeholder) {
+.global-search-input input::placeholder {
   font-size: 12px;
+  line-height: 1.2;
 }
 
 @media (max-width: 1100px) {
