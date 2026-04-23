@@ -47,7 +47,12 @@
             <el-form label-width="72px" class="project-hub-filter-form">
               <el-form-item label="关键词">
                 <div class="project-hub-filter-keyword">
-                  <el-select v-model="projectHubTicketFilters.keyword_field" class="project-hub-filter-keyword-field" @change="onProjectHubFilterChange">
+                  <el-select
+                    v-model="projectHubTicketFilters.keyword_field"
+                    class="project-hub-filter-keyword-field"
+                    popper-class="project-hub-filter-popper"
+                    @change="onProjectHubFilterChange"
+                  >
                     <el-option label="标题" value="title" />
                     <el-option label="描述" value="description" />
                   </el-select>
@@ -62,22 +67,50 @@
                 </div>
               </el-form-item>
               <el-form-item label="状态">
-                <el-select v-model="projectHubTicketFilters.status" clearable placeholder="全部状态" class="project-hub-filter-item" @change="onProjectHubFilterChange">
+                <el-select
+                  v-model="projectHubTicketFilters.status"
+                  clearable
+                  placeholder="全部状态"
+                  class="project-hub-filter-item"
+                  popper-class="project-hub-filter-popper"
+                  @change="onProjectHubFilterChange"
+                >
                   <el-option v-for="item in meta.ticket_status" :key="`project-hub-status-${item}`" :label="item" :value="item" />
                 </el-select>
               </el-form-item>
               <el-form-item label="相关人员">
-                <el-select v-model="projectHubTicketFilters.related_user_id" clearable filterable placeholder="全部人员" class="project-hub-filter-item" @change="onProjectHubFilterChange">
+                <el-select
+                  v-model="projectHubTicketFilters.related_user_id"
+                  clearable
+                  filterable
+                  placeholder="全部人员"
+                  class="project-hub-filter-item"
+                  popper-class="project-hub-filter-popper"
+                  @change="onProjectHubFilterChange"
+                >
                   <el-option v-for="item in users" :key="`project-hub-related-${item.id}`" :label="item.display_name || item.username" :value="item.id" />
                 </el-select>
               </el-form-item>
               <el-form-item label="执行人">
-                <el-select v-model="projectHubTicketFilters.executor_id" clearable filterable placeholder="全部执行人" class="project-hub-filter-item" @change="onProjectHubFilterChange">
+                <el-select
+                  v-model="projectHubTicketFilters.executor_id"
+                  clearable
+                  filterable
+                  placeholder="全部执行人"
+                  class="project-hub-filter-item"
+                  popper-class="project-hub-filter-popper"
+                  @change="onProjectHubFilterChange"
+                >
                   <el-option v-for="item in users" :key="`project-hub-executor-${item.id}`" :label="item.display_name || item.username" :value="item.id" />
                 </el-select>
               </el-form-item>
               <el-form-item label="类型">
-                <el-select v-model="projectHubTicketTypeMode" class="project-hub-filter-item" @change="onProjectHubFilterChange">
+                <el-select
+                  v-model="projectHubTicketTypeMode"
+                  class="project-hub-filter-item"
+                  popper-class="project-hub-filter-popper"
+                  @change="onProjectHubFilterChange"
+                >
                   <el-option label="全部" value="all" />
                   <el-option label="需求" value="task" />
                   <el-option label="BUG" value="bug" />
@@ -118,7 +151,7 @@
               <el-table-column label="操作" width="92" fixed="right" align="center">
                 <template #default="scope">
                   <el-dropdown trigger="click" @command="(command) => onProjectHubRowAction(command, scope.row)">
-                    <el-button link type="primary" @click.stop>
+                    <el-button link type="primary" class="project-row-more-btn" @click.stop>
                       更多
                     </el-button>
                     <template #dropdown>
@@ -522,6 +555,22 @@ const {
   margin-bottom: 8px;
 }
 
+.project-hub-filter-form :deep(.el-form-item__label) {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.project-hub-filter-panel :deep(.el-input__inner),
+.project-hub-filter-panel :deep(.el-select__selected-item),
+.project-hub-filter-panel :deep(.el-select__placeholder),
+.project-hub-filter-panel :deep(.el-select__input) {
+  font-size: 12px;
+}
+
+:global(.project-hub-filter-popper .el-select-dropdown__item) {
+  font-size: 12px;
+}
+
 .project-hub-filter-keyword {
   display: flex;
   align-items: center;
@@ -591,6 +640,14 @@ const {
   font-size: 12px;
   padding-top: 10px;
   padding-bottom: 10px;
+}
+
+.project-hub-ticket-table :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.project-row-more-btn {
+  font-size: 12px;
 }
 
 .project-kanban {

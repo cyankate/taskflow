@@ -496,14 +496,14 @@ const {
   align-items: center;
   gap: 10px 14px;
   padding: 12px 14px;
-  background: var(--el-bg-color-overlay, #f5f7fa);
-  border: 1px solid var(--el-border-color-lighter, #ebeef5);
+  background: #ffffff;
+  border: 1px solid #e6e8ec;
   border-radius: 8px;
 }
 
 .console-gateway-label {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: #303133;
   white-space: nowrap;
 }
@@ -535,12 +535,12 @@ const {
 }
 
 .console-tool-card .console-card-title {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .console-tool-card .console-card-desc {
   margin: 0 0 12px;
-  color: #909399;
+  color: #94a3b8;
   font-size: 12px;
   line-height: 1.5;
 }
@@ -620,13 +620,13 @@ const {
 }
 
 .console-db-back {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .console-db-heading {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 500;
   color: #303133;
 }
 
@@ -647,7 +647,7 @@ const {
 }
 
 .console-db-panel {
-  border: 1px solid var(--el-border-color-lighter, #ebeef5);
+  border: 1px solid #e6e8ec;
   border-radius: 8px;
   background: var(--el-bg-color, #fff);
   display: flex;
@@ -658,9 +658,9 @@ const {
 .console-db-panel-title {
   padding: 10px 12px;
   font-size: 13px;
-  font-weight: 600;
-  border-bottom: 1px solid var(--el-border-color-lighter, #ebeef5);
-  background: #fafafa;
+  font-weight: 500;
+  border-bottom: 1px solid #edf0f2;
+  background: #f9fafb;
 }
 
 .console-db-scroll {
@@ -704,13 +704,13 @@ const {
 
 .console-db-item-sub {
   font-size: 12px;
-  color: #909399;
+  color: #94a3b8;
   margin-top: 2px;
 }
 
 .console-db-mini-hint {
   font-size: 11px;
-  color: #909399;
+  color: #94a3b8;
   padding: 0 10px 8px;
   margin: 0;
 }
@@ -735,32 +735,32 @@ const {
 }
 
 .console-db-field-type {
-  color: #909399;
+  color: #94a3b8;
   flex-shrink: 0;
 }
 
 .console-db-placeholder {
   font-size: 12px;
-  color: #c0c4cc;
+  color: #9ca3af;
   padding: 16px 8px;
   text-align: center;
 }
 
 .console-db-workspace {
-  border: 1px solid var(--el-border-color-lighter, #ebeef5);
+  border: 1px solid #e6e8ec;
   border-radius: 8px;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  background: #fafafa;
+  background: #ffffff;
 }
 
 .console-db-label {
   display: block;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: #606266;
   margin-bottom: 6px;
 }
@@ -822,7 +822,7 @@ const {
 .console-db-no-val {
   flex: 1;
   min-width: 80px;
-  color: #c0c4cc;
+  color: #9ca3af;
   font-size: 12px;
 }
 
@@ -884,13 +884,13 @@ const {
 .console-hotreload-heading {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .console-hotreload-note {
   margin: 0;
   font-size: 12px;
-  color: #909399;
+  color: #94a3b8;
   line-height: 1.5;
 }
 
