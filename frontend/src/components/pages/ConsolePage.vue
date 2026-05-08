@@ -502,7 +502,7 @@ const {
 }
 
 .console-gateway-label {
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   font-weight: 500;
   color: #303133;
   white-space: nowrap;
@@ -518,13 +518,13 @@ const {
   margin: 0 0 12px;
   color: #606266;
   line-height: 1.6;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
 }
 
 .console-status-alert .console-hint {
   margin-top: 6px;
   line-height: 1.55;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   white-space: pre-wrap;
 }
 
@@ -541,7 +541,7 @@ const {
 .console-tool-card .console-card-desc {
   margin: 0 0 12px;
   color: #94a3b8;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   line-height: 1.5;
 }
 
@@ -555,7 +555,7 @@ const {
 
 .console-result :deep(textarea) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .console-db-entry-card,
@@ -620,18 +620,18 @@ const {
 }
 
 .console-db-back {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .console-db-heading {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--tf-font-icon-lg);
   font-weight: 500;
   color: #303133;
 }
 
 .console-db-gateway-pill {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   padding: 2px 10px;
   border-radius: 999px;
   background: #ecf5ff;
@@ -657,7 +657,7 @@ const {
 
 .console-db-panel-title {
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   font-weight: 500;
   border-bottom: 1px solid #edf0f2;
   background: #f9fafb;
@@ -684,7 +684,7 @@ const {
   background: transparent;
   cursor: pointer;
   text-align: left;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   color: #303133;
   transition: background 0.15s ease;
 }
@@ -703,13 +703,13 @@ const {
 }
 
 .console-db-item-sub {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #94a3b8;
   margin-top: 2px;
 }
 
 .console-db-mini-hint {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
   padding: 0 10px 8px;
   margin: 0;
@@ -726,11 +726,11 @@ const {
   gap: 8px;
   padding: 6px 0;
   border-bottom: 1px dashed #ebeef5;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .console-db-field-name {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #409eff;
 }
 
@@ -740,7 +740,7 @@ const {
 }
 
 .console-db-placeholder {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #9ca3af;
   padding: 16px 8px;
   text-align: center;
@@ -759,7 +759,7 @@ const {
 
 .console-db-label {
   display: block;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   font-weight: 500;
   color: #606266;
   margin-bottom: 6px;
@@ -768,7 +768,7 @@ const {
 .console-db-sql-block .console-db-sql-input :deep(textarea) {
   min-height: 140px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .console-db-label-row {
@@ -823,7 +823,7 @@ const {
   flex: 1;
   min-width: 80px;
   color: #9ca3af;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .console-db-cta {
@@ -854,7 +854,7 @@ const {
 
 .console-db-cell-preview {
   color: #606266;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .console-db-cell-json {
@@ -863,7 +863,7 @@ const {
   overflow: auto;
   white-space: pre;
   word-break: normal;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   line-height: 1.45;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
@@ -883,13 +883,13 @@ const {
 
 .console-hotreload-heading {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--tf-font-icon-lg);
   font-weight: 500;
 }
 
 .console-hotreload-note {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #94a3b8;
   line-height: 1.5;
 }
@@ -916,7 +916,7 @@ const {
 }
 
 .console-hotreload-aside-title {
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   font-weight: 600;
   margin-bottom: 8px;
   color: #606266;
@@ -939,7 +939,7 @@ const {
   border-radius: 6px;
   background: #fff;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
 }
 
 .console-hotreload-file-item:hover {
@@ -956,14 +956,14 @@ const {
 }
 
 .console-hotreload-file-size {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #909399;
   flex-shrink: 0;
   margin-left: 8px;
 }
 
 .console-hotreload-mini-hint {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #909399;
   margin-top: 6px;
 }
@@ -997,7 +997,7 @@ const {
 }
 
 .console-hotreload-panel-head {
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   font-weight: 600;
   color: #303133;
   display: flex;
@@ -1015,7 +1015,7 @@ const {
 
 .console-hotreload-picked-name {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #606266;
 }
 
@@ -1041,7 +1041,7 @@ const {
 }
 
 .console-hotreload-local-remove {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .console-hotreload-textarea-wrap {
@@ -1051,7 +1051,7 @@ const {
 .console-hotreload-textarea :deep(textarea) {
   min-height: 300px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .hotreload-diff-inner {
@@ -1072,7 +1072,7 @@ const {
   gap: 12px 20px;
   margin: 0 0 12px;
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #606266;
 }
 
@@ -1158,7 +1158,7 @@ const {
   background: #f5f7fa;
   border-bottom: 1px solid #ebeef5;
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #606266;
 }
 
@@ -1180,7 +1180,7 @@ const {
   grid-template-columns: 1fr 1fr;
   border-bottom: 1px solid #f0f2f5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   line-height: 1.5;
 }
 

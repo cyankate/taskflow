@@ -204,16 +204,10 @@ const {
   gap: 8px;
 }
 
-.dashboard-panel-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: #334155;
-}
-
 .clickable-ticket-table :deep(.el-table__cell) {
-  font-size: 12px;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  font-size: var(--tf-font-body);
+  padding-top: var(--tf-table-cell-padding-y);
+  padding-bottom: var(--tf-table-cell-padding-y);
 }
 
 .wiki-category-bar {
@@ -246,7 +240,7 @@ const {
   height: 24px;
   padding: 0 10px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   line-height: 1;
   border-color: #e6e8ec;
   color: #475569;
@@ -343,7 +337,7 @@ const {
   gap: 10px;
   align-items: center;
   color: #94a3b8;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
 }
 
 .wiki-detail-attachments {
@@ -365,7 +359,7 @@ const {
 }
 
 .wiki-detail-attachments-count {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
@@ -375,13 +369,13 @@ const {
 
 .wiki-detail-attachment-empty {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #9ca3af;
 }
 
 .wiki-detail-attachments :deep(.ticket-attachments-title) {
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
 }
 
 .wiki-detail-attachments .wiki-attachment-item {

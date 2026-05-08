@@ -1,0 +1,21 @@
+:root {
+  --tf-font-caption: 12px;
+  --tf-font-body: 13px;
+  --tf-font-callout: 15px;
+  --tf-font-subtitle: 14px;
+  --tf-font-kpi: 18px;
+  --tf-font-icon-lg: 19px;
+  --tf-font-display: 25px;
+
+  --tf-font-medium: 500;
+  --tf-color-text-heading: #334155;
+  --tf-color-table-header-bg: #f9fafb;
+
+  --tf-table-cell-padding-y: 10px;
+}
+
+.dashboard-panel-title {
+  font-size: var(--tf-font-subtitle);
+  font-weight: var(--tf-font-medium);
+  color: var(--tf-color-text-heading);
+}

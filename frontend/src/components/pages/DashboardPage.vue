@@ -441,8 +441,6 @@ const {
   align-items: center;
   gap: 8px;
   padding-left: 8px;
-  font-size: 13px;
-  font-weight: 500;
 }
 
 .dashboard-panel-title::before {
@@ -492,7 +490,7 @@ const {
 .dynamic-compact {
   padding: 8px 0;
   border-bottom: 1px solid #edf0f2;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .dynamic-compact:last-child {
@@ -525,7 +523,7 @@ const {
 .dynamic-compact-time {
   flex-shrink: 0;
   color: #94a3b8;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
 }
 
 .dashboard-dynamics-list .dynamic-compact-line2 {
@@ -563,11 +561,11 @@ const {
 
 .dashboard-dynamics-head :deep(.el-switch__label) {
   color: #94a3b8;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
 }
 
 .dashboard-overview-scope {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
@@ -609,13 +607,13 @@ const {
 }
 
 .dashboard-overview-kpi-label {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
 .dashboard-overview-kpi-value {
   margin-top: 4px;
-  font-size: 17px;
+  font-size: var(--tf-font-kpi);
   line-height: 1;
   font-weight: 500;
   color: #1f2937;
@@ -629,7 +627,7 @@ const {
 }
 
 .dashboard-status-filter-text {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #606266;
 }
 
@@ -643,7 +641,7 @@ const {
 
 .dashboard-status-tip {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
@@ -656,9 +654,9 @@ const {
 }
 
 .dashboard-main-table :deep(.el-table__cell) {
-  font-size: 12px;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  font-size: var(--tf-font-body);
+  padding-top: var(--tf-table-cell-padding-y);
+  padding-bottom: var(--tf-table-cell-padding-y);
 }
 
 .dashboard-main-table :deep(.el-table__body .el-table__cell:first-child .cell) {
@@ -716,7 +714,7 @@ const {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   font-weight: 600;
   line-height: 1;
   flex-shrink: 0;
@@ -744,7 +742,7 @@ const {
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1;
 }
@@ -783,7 +781,7 @@ const {
 .dashboard-task-relation {
   margin-top: 4px;
   color: #94a3b8;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   line-height: 1.4;
   white-space: normal;
   word-break: break-word;
@@ -841,7 +839,7 @@ const {
 
 .dashboard-deadline-hint {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
 }
 
 .dashboard-deadline-hint.normal {
@@ -872,7 +870,7 @@ const {
   }
 
   .dashboard-overview-kpi-value {
-    font-size: 17px;
+    font-size: var(--tf-font-kpi);
   }
 }
 

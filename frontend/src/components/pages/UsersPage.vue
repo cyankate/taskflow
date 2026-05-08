@@ -44,19 +44,19 @@ const { user, activeTab, users, openUserDialog, removeUser } = appCtx;
 }
 
 .users-table :deep(.el-table__cell) {
-  font-size: 12px;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  font-size: var(--tf-font-body);
+  padding-top: var(--tf-table-cell-padding-y);
+  padding-bottom: var(--tf-table-cell-padding-y);
 }
 
 .users-table :deep(.el-table__header .el-table__cell) {
-  font-size: 13px;
-  font-weight: 500;
-  color: #334155;
-  background: #f9fafb;
+  font-size: var(--tf-font-subtitle);
+  font-weight: var(--tf-font-medium);
+  color: var(--tf-color-text-heading);
+  background: var(--tf-color-table-header-bg);
 }
 
 .management-action-btn {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
 }
 </style>

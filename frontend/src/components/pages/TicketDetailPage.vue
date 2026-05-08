@@ -813,7 +813,7 @@ const {
 
 .ticket-detail-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 700;
   color: #1f2d3d;
   display: flex;
@@ -837,7 +837,7 @@ const {
   height: 24px;
   padding: 0 8px;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0;
   font-weight: 700;
   border: 1px solid transparent;
@@ -1012,14 +1012,14 @@ const {
   border-radius: 8px;
   background: #fff;
   line-height: 1.75;
-  font-size: 14px;
+  font-size: 15px;
   outline: none;
 }
 
 .ticket-description-content {
   color: #606266;
   line-height: 1.75;
-  font-size: 14px;
+  font-size: 15px;
   min-height: 340px;
   padding: 14px 16px;
   border: 1px solid #eef2f8;
@@ -1067,12 +1067,12 @@ const {
 
 .ticket-related-head h4 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .ticket-related-progress {
-  font-size: 12px;
+  font-size: 13px;
   color: #9aa4b2;
 }
 
@@ -1103,7 +1103,7 @@ const {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .related-status-wrap {
@@ -1158,25 +1158,25 @@ const {
 }
 
 .upload-btn-main {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .upload-btn-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: #6f8bbd;
 }
 
 .attachment-tip {
   margin-top: 4px;
   color: #909399;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .attachment-error-tip {
   margin-top: 6px;
   color: #f56c6c;
-  font-size: 12px;
+  font-size: 13px;
   background: #fff2f0;
   border: 1px solid #fbc4c4;
   border-radius: 6px;
@@ -1191,7 +1191,7 @@ const {
   border: 1px dashed #dbe6f5;
   border-radius: 8px;
   color: #8a95a6;
-  font-size: 12px;
+  font-size: 13px;
   background: #fbfdff;
 }
 
@@ -1222,7 +1222,7 @@ const {
 
 .attachment-caption {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: #606266;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1328,7 +1328,7 @@ const {
 }
 
 .comment-reply-item {
-  font-size: 12px;
+  font-size: 13px;
   color: #606266;
   line-height: 1.4;
   margin-bottom: 3px;
@@ -1349,7 +1349,7 @@ const {
 }
 
 .comment-time {
-  font-size: 12px;
+  font-size: 13px;
   color: #9aa4b2;
 }
 
@@ -1359,7 +1359,7 @@ const {
   padding: 0;
   cursor: pointer;
   color: #5b8cff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -1427,7 +1427,7 @@ const {
 }
 
 .ticket-quick-label {
-  font-size: 12px;
+  font-size: 13px;
   color: #7f8a9a;
 }
 
@@ -1555,7 +1555,7 @@ const {
 
 .ticket-assignee-position {
   color: #909399;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .ticket-role-select {
@@ -1582,7 +1582,7 @@ const {
 
 .ticket-watcher-line {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: 13px;
   color: #606266;
   line-height: 1.5;
 }

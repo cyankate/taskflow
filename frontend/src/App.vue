@@ -1164,14 +1164,14 @@ useEditorSelectionSync({
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   font-weight: 700;
 }
 
 .platform-title {
   white-space: nowrap;
   display: inline-block;
-  font-size: 24px;
+  font-size: var(--tf-font-display);
   line-height: 1;
   letter-spacing: 0.6px;
   font-weight: 800;
@@ -1230,7 +1230,7 @@ useEditorSelectionSync({
   color: #475569;
   border-radius: 8px;
   height: 38px;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   cursor: pointer;
   transition: all 0.2s ease;
   display: inline-flex;
@@ -1240,7 +1240,7 @@ useEditorSelectionSync({
 }
 
 .side-nav-icon {
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   line-height: 1;
   opacity: 0.9;
 }
@@ -1266,7 +1266,7 @@ useEditorSelectionSync({
 }
 
 .side-version-title {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #909399;
   margin-bottom: 6px;
 }
@@ -1284,7 +1284,7 @@ useEditorSelectionSync({
   border-radius: 999px;
   height: 26px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   cursor: pointer;
 }
 
@@ -1360,7 +1360,7 @@ useEditorSelectionSync({
 }
 
 .global-search-input input::placeholder {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   line-height: 1.2;
 }
 
@@ -1490,13 +1490,13 @@ useEditorSelectionSync({
 .attachment-tip {
   margin-top: 4px;
   color: #909399;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .attachment-error-tip {
   margin-top: 6px;
   color: #f56c6c;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   background: #fff2f0;
   border: 1px solid #fbc4c4;
   border-radius: 6px;
@@ -1574,7 +1574,7 @@ useEditorSelectionSync({
   height: 24px;
   padding: 0 10px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   line-height: 1;
   border-color: #dcdfe6;
   color: #606266;
@@ -1647,7 +1647,7 @@ useEditorSelectionSync({
 }
 
 .topbar-notify-btn {
-  font-size: 18px;
+  font-size: var(--tf-font-icon-lg);
   padding: 6px;
 }
 
@@ -1690,20 +1690,20 @@ useEditorSelectionSync({
 
 .notification-feed-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--tf-font-callout);
   color: #303133;
 }
 
 .notification-feed-body {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   color: #606266;
   line-height: 1.45;
 }
 
 .notification-feed-time {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
   color: #909399;
 }
 

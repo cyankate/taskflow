@@ -480,7 +480,7 @@ const {
   border: 1px solid #d4d9e1;
   background: #f8fafc;
   color: #64748b;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   box-shadow: none;
 }
 
@@ -489,7 +489,7 @@ const {
   background: transparent;
   color: #409eff;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--tf-font-callout);
   line-height: 1;
   padding: 0;
 }
@@ -521,19 +521,13 @@ const {
   width: 100%;
 }
 
-.dashboard-panel-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: #334155;
-}
-
 .project-hub-tickets-head {
   flex-wrap: wrap;
   gap: 8px;
 }
 
 .project-hub-muted {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
@@ -556,7 +550,7 @@ const {
 }
 
 .project-hub-filter-form :deep(.el-form-item__label) {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
@@ -564,11 +558,11 @@ const {
 .project-hub-filter-panel :deep(.el-select__selected-item),
 .project-hub-filter-panel :deep(.el-select__placeholder),
 .project-hub-filter-panel :deep(.el-select__input) {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 :global(.project-hub-filter-popper .el-select-dropdown__item) {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .project-hub-filter-keyword {
@@ -606,7 +600,7 @@ const {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--tf-font-callout);
   transition: all 0.15s ease;
   position: relative;
 }
@@ -637,9 +631,9 @@ const {
 }
 
 .project-hub-ticket-table :deep(.el-table__cell) {
-  font-size: 12px;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  font-size: var(--tf-font-body);
+  padding-top: var(--tf-table-cell-padding-y);
+  padding-bottom: var(--tf-table-cell-padding-y);
 }
 
 .project-hub-ticket-table :deep(.el-table__row) {
@@ -647,7 +641,7 @@ const {
 }
 
 .project-row-more-btn {
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .project-kanban {
@@ -670,7 +664,7 @@ const {
 }
 
 .project-kanban-column-head {
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   font-weight: 500;
   padding: 8px 10px;
   border-bottom: 1px solid #eef1f4;
@@ -700,7 +694,7 @@ const {
 }
 
 .project-kanban-card-title {
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   color: #303133;
   margin-bottom: 6px;
 }
@@ -709,7 +703,7 @@ const {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
@@ -763,7 +757,7 @@ const {
 .dynamic-compact {
   padding: 8px 0;
   border-bottom: 1px solid #edf0f2;
-  font-size: 12px;
+  font-size: var(--tf-font-body);
 }
 
 .dynamic-compact:last-child {
@@ -796,7 +790,7 @@ const {
 .dynamic-compact-time {
   flex-shrink: 0;
   color: #94a3b8;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
 }
 
 .dynamic-compact-line2 {
@@ -819,7 +813,7 @@ const {
 }
 
 .version-manage-collapse :deep(.el-collapse-item__header) {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #6b7280;
 }
 
@@ -849,13 +843,13 @@ const {
 }
 
 .report-metric-label {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
 .report-metric-value {
   margin-top: 3px;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: #303133;
 }
@@ -867,7 +861,7 @@ const {
 }
 
 .stats-subtitle {
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   font-weight: 500;
   margin-bottom: 6px;
   color: #606266;
@@ -921,7 +915,7 @@ const {
   border-radius: 6px;
   background: #f9fafb;
   color: #606266;
-  font-size: 13px;
+  font-size: var(--tf-font-subtitle);
   font-weight: 500;
   min-height: 32px;
   display: flex;
@@ -954,7 +948,7 @@ const {
 }
 
 .density-cell-date {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #6b7280;
   font-weight: 500;
 }
@@ -965,7 +959,7 @@ const {
   outline: none;
   cursor: pointer;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #1f2937;
   line-height: 1.3;
   white-space: nowrap;
@@ -982,20 +976,20 @@ const {
 }
 
 .density-task-more {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #1d4ed8;
   font-weight: 500;
 }
 
 .density-day-empty {
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #9ca3af;
   margin-top: auto;
 }
 
 .density-legend {
   margin-top: 6px;
-  font-size: 11px;
+  font-size: var(--tf-font-caption);
   color: #94a3b8;
 }
 
