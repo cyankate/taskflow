@@ -1327,10 +1327,10 @@ useEditorSelectionSync({
 
 .side-nav-caret {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1;
   color: #94a3b8;
-  padding: 2px 4px;
+  padding: 3px 5px;
   border-radius: 4px;
 }
 
