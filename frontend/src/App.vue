@@ -79,7 +79,7 @@
 
       <div class="main-layout">
         <aside class="side-nav">
-          <button class="side-nav-item" :class="{ active: activeTab === 'dashboard' }" @click="handleSideNavClick('dashboard')">
+          <button class="side-nav-item" :class="{ active: activeTab === 'dashboard' }" @click="onSideNavClick('dashboard')">
             <span class="side-nav-icon">▦</span>
             <span>工作台</span>
           </button>
@@ -98,18 +98,45 @@
               </button>
             </div>
           </div>
-          <button class="side-nav-item" :class="{ active: activeTab === 'project_hub' }" @click="handleSideNavClick('project_hub')">
-            <span class="side-nav-icon">◫</span>
-            <span>项目</span>
-          </button>
-          <button class="side-nav-item" :class="{ active: activeTab === 'wiki' }" @click="handleSideNavClick('wiki')">
+          <div class="side-nav-group">
+            <button
+              type="button"
+              class="side-nav-item side-nav-parent"
+              :class="{ active: activeTab === 'project_hub' && !projectHubRoleKey }"
+              @click="handleProjectNavClick(null)"
+            >
+              <span class="side-nav-icon">◫</span>
+              <span>项目</span>
+              <span
+                class="side-nav-caret"
+                role="button"
+                tabindex="0"
+                :title="projectNavExpanded ? '收起岗位' : '展开岗位'"
+                @click.stop="toggleProjectNavExpanded"
+                @keydown.enter.stop.prevent="toggleProjectNavExpanded"
+              >{{ projectNavExpanded ? "▾" : "▸" }}</span>
+            </button>
+            <div v-show="projectNavExpanded" class="side-nav-sublist">
+              <button
+                v-for="item in PROJECT_ROLE_TABS"
+                :key="item.key"
+                type="button"
+                class="side-nav-sub-item"
+                :class="{ active: activeTab === 'project_hub' && projectHubRoleKey === item.key }"
+                @click="handleProjectNavClick(item.key)"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+          </div>
+          <button class="side-nav-item" :class="{ active: activeTab === 'wiki' }" @click="onSideNavClick('wiki')">
             <span class="side-nav-icon">▤</span>
             <span>Wiki</span>
           </button>
           <button
             class="side-nav-item"
             :class="{ active: activeTab === 'console' }"
-            @click="handleSideNavClick('console')"
+            @click="onSideNavClick('console')"
           >
             <span class="side-nav-icon">⌗</span>
             <span>控制台</span>
@@ -118,7 +145,7 @@
             v-if="user.is_admin"
             class="side-nav-item"
             :class="{ active: activeTab === 'projects' }"
-            @click="handleSideNavClick('projects')"
+            @click="onSideNavClick('projects')"
           >
             <span class="side-nav-icon">◧</span>
             <span>项目管理</span>
@@ -127,7 +154,7 @@
             v-if="user.is_admin"
             class="side-nav-item"
             :class="{ active: activeTab === 'users' }"
-            @click="handleSideNavClick('users')"
+            @click="onSideNavClick('users')"
           >
             <span class="side-nav-icon">◉</span>
             <span>用户管理</span>
@@ -576,6 +603,17 @@ const {
   projectHubFilterExpanded,
   projectHubTicketFilters,
   projectHubFilteredTickets,
+  projectHubRoleKey,
+  projectHubRoleLabel,
+  projectHubRoleStats,
+  projectHubRoleMemberRows,
+  projectHubRoleRiskItems,
+  projectHubRoleWorkloadRows,
+  projectHubDisplayDynamics,
+  projectNavExpanded,
+  PROJECT_ROLE_TABS,
+  handleProjectNavClick,
+  toggleProjectNavExpanded,
   kanbanColumns,
   openNotificationCenter,
   closeTicketDetail,
@@ -787,6 +825,13 @@ const {
   ElMessage,
 });
 
+function onSideNavClick(tabKey) {
+  if (tabKey !== "project_hub") {
+    projectHubRoleKey.value = null;
+  }
+  handleSideNavClick(tabKey);
+}
+
 const {
   dashboardDynamicsOnlyMine,
   dashboardQuickFilterMode,
@@ -950,6 +995,17 @@ provide("appCtx", {
   setDefaultProject,
   removeProject,
   projectHubFilteredTickets,
+  projectHubRoleKey,
+  projectHubRoleLabel,
+  projectHubRoleStats,
+  projectHubRoleMemberRows,
+  projectHubRoleRiskItems,
+  projectHubRoleWorkloadRows,
+  projectHubDisplayDynamics,
+  projectNavExpanded,
+  PROJECT_ROLE_TABS,
+  handleProjectNavClick,
+  toggleProjectNavExpanded,
   projectHubFilterExpanded,
   projectHubFiltersActive,
   toggleProjectHubFilters,
@@ -1252,6 +1308,66 @@ useEditorSelectionSync({
 }
 
 .side-nav-item.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.side-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.side-nav-parent {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.side-nav-caret {
+  margin-left: auto;
+  font-size: 10px;
+  line-height: 1;
+  color: #94a3b8;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.side-nav-caret:hover {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.side-nav-sublist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 10px;
+}
+
+.side-nav-sub-item {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  border-radius: 6px;
+  height: 32px;
+  font-size: var(--tf-font-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 10px;
+}
+
+.side-nav-sub-item:hover {
+  border-color: #bfdbfe;
+  color: #2563eb;
+  background: #f8fbff;
+}
+
+.side-nav-sub-item.active {
   border-color: #93c5fd;
   background: #eff6ff;
   color: #1d4ed8;

@@ -43,7 +43,14 @@ function groupTasksByParentChain(list) {
   return result;
 }
 
-export function usePaginationState({ dashboard, dashboardViewMode, projectHubTickets, projectHub, wikiArticles }) {
+export function usePaginationState({
+  dashboard,
+  dashboardViewMode,
+  projectHubTickets,
+  projectHubDynamics,
+  projectHub,
+  wikiArticles,
+}) {
   const dashboardTaskPage = ref(1);
   const dashboardTaskPageSize = 8;
   const dashboardBugPage = ref(1);
@@ -87,7 +94,7 @@ export function usePaginationState({ dashboard, dashboardViewMode, projectHubTic
   });
 
   const pagedProjectDynamics = computed(() => {
-    const list = projectHub.dynamics || [];
+    const list = projectHubDynamics?.value ?? projectHub.dynamics ?? [];
     const start = (projectDynamicsPage.value - 1) * projectDynamicsPageSize;
     return list.slice(start, start + projectDynamicsPageSize);
   });
@@ -130,7 +137,10 @@ export function usePaginationState({ dashboard, dashboardViewMode, projectHubTic
   );
 
   watch(
-    () => (projectHub.dynamics || []).length,
+    () => {
+      const list = projectHubDynamics?.value ?? projectHub.dynamics ?? [];
+      return list.length;
+    },
     (len) => {
       const totalPages = Math.max(1, Math.ceil(len / projectDynamicsPageSize));
       if (projectDynamicsPage.value > totalPages) projectDynamicsPage.value = totalPages;

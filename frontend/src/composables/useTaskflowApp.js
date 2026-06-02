@@ -57,6 +57,14 @@ import { useWikiModule } from "./taskflow/useWikiModule";
 import { useConsoleModule } from "./taskflow/useConsoleModule";
 import { useAuthState } from "./taskflow/useAuthState";
 import { usePaginationState } from "./taskflow/usePaginationState";
+import {
+  PROJECT_ROLE_TABS,
+  buildProjectRoleMemberRows,
+  buildProjectRoleStats,
+  filterProjectRoleDynamics,
+  getProjectRoleTab,
+  ticketMatchesProjectRole,
+} from "./taskflow/projectRoleConfig";
 
 export function useTaskflowApp() {
   const NOTIFICATION_POLL_MS = 15000;
@@ -117,6 +125,8 @@ export function useTaskflowApp() {
 
   const projectHubTicketViewMode = ref("list");
   const projectHubTicketTypeMode = ref("all");
+  const projectHubRoleKey = ref(null);
+  const projectNavExpanded = ref(true);
   const projectHubFilterExpanded = ref(false);
   const projectHubTicketFilters = reactive({
     keyword_field: "title",
@@ -171,7 +181,43 @@ export function useTaskflowApp() {
       list = list.filter((item) => Number(item.executor_id || 0) === executorId);
     }
 
+    const roleKey = projectHubRoleKey.value;
+    if (roleKey) {
+      list = list.filter((item) => ticketMatchesProjectRole(item, roleKey, users.value));
+    }
+
     return list;
+  });
+
+  const projectHubRoleLabel = computed(() => getProjectRoleTab(projectHubRoleKey.value)?.label || "");
+
+  const projectHubRoleStats = computed(() => buildProjectRoleStats(projectHubFilteredTickets.value));
+
+  const projectHubRoleMemberRows = computed(() =>
+    buildProjectRoleMemberRows(projectHubFilteredTickets.value, users.value, projectHubRoleKey.value),
+  );
+
+  const projectHubRoleRiskItems = computed(() => {
+    const roleKey = projectHubRoleKey.value;
+    if (!roleKey) return analytics.risk?.items || [];
+    const ticketIds = new Set(projectHubFilteredTickets.value.map((item) => Number(item.id)));
+    return (analytics.risk?.items || []).filter((item) => ticketIds.has(Number(item.ticket_id)));
+  });
+
+  const projectHubRoleWorkloadRows = computed(() => {
+    const roleKey = projectHubRoleKey.value;
+    if (!roleKey) return analytics.workload?.rows || [];
+    const tab = getProjectRoleTab(roleKey);
+    if (!tab) return analytics.workload?.rows || [];
+    const labels = new Set(tab.positions);
+    return (analytics.workload?.rows || []).filter((row) => labels.has(row.label) || labels.has(row.key));
+  });
+
+  const projectHubDisplayDynamics = computed(() => {
+    const list = projectHub.dynamics || [];
+    const roleKey = projectHubRoleKey.value;
+    if (!roleKey) return list;
+    return filterProjectRoleDynamics(list, users.value, roleKey);
   });
 
   const kanbanColumns = computed(() => {
@@ -347,6 +393,7 @@ export function useTaskflowApp() {
     dashboard,
     dashboardViewMode,
     projectHubTickets: projectHubFilteredTickets,
+    projectHubDynamics: projectHubDisplayDynamics,
     projectHub,
     wikiArticles,
   });
@@ -359,6 +406,46 @@ export function useTaskflowApp() {
       }
     },
   );
+
+  watch(
+    () => activeTab.value,
+    (tab) => {
+      if (tab === "project_hub") {
+        projectNavExpanded.value = true;
+      }
+    },
+  );
+
+  watch(projectHubRoleKey, () => {
+    ticketPage.value = 1;
+    projectDynamicsPage.value = 1;
+  });
+
+  function handleProjectNavClick(roleKey) {
+    if (ticketDetail.visible) {
+      ticketDetail.visible = false;
+      ticketDetail.editing = false;
+      ticketDetail.descriptionEditing = false;
+    }
+    const nextRole = roleKey || null;
+    const unchanged = activeTab.value === "project_hub" && projectHubRoleKey.value === nextRole;
+    projectHubRoleKey.value = nextRole;
+    projectNavExpanded.value = true;
+    if (activeTab.value !== "project_hub") {
+      activeTab.value = "project_hub";
+    }
+    if (!unchanged) {
+      nextTick(() => {
+        if (typeof window !== "undefined") {
+          window.scrollTo({ top: 0, behavior: "auto" });
+        }
+      });
+    }
+  }
+
+  function toggleProjectNavExpanded() {
+    projectNavExpanded.value = !projectNavExpanded.value;
+  }
 
   function openImagePreview(item) {
     imagePreview.url = item?.url || "";
@@ -716,6 +803,7 @@ export function useTaskflowApp() {
     if (activeTab.value !== "project_hub") {
       activeTab.value = "project_hub";
     }
+    projectHubRoleKey.value = null;
   }
 
   async function clearTopbarSearch() {
@@ -892,6 +980,17 @@ export function useTaskflowApp() {
     projectHubFilterExpanded,
     projectHubTicketFilters,
     projectHubFilteredTickets,
+    projectHubRoleKey,
+    projectHubRoleLabel,
+    projectHubRoleStats,
+    projectHubRoleMemberRows,
+    projectHubRoleRiskItems,
+    projectHubRoleWorkloadRows,
+    projectHubDisplayDynamics,
+    projectNavExpanded,
+    PROJECT_ROLE_TABS,
+    handleProjectNavClick,
+    toggleProjectNavExpanded,
     kanbanColumns,
     projectHub,
     versionForm,

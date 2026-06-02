@@ -1,11 +1,15 @@
 <template>
   <section v-show="activeTab === 'project_hub'">
-    <div class="project-hub-main">
+    <div v-if="projectHubRoleKey" class="project-hub-role-banner">
+      <span class="dashboard-panel-title">{{ projectHubRoleLabel }}岗位</span>
+      <span class="project-hub-muted">按需求子类型与相关成员岗位筛选</span>
+    </div>
+    <div class="project-hub-main" :class="{ 'is-role-view': !!projectHubRoleKey }">
       <div class="project-hub-main-column">
         <el-card class="project-hub-tickets-card">
           <template #header>
             <div class="project-hub-card-head project-hub-tickets-head">
-              <span class="dashboard-panel-title">工单</span>
+              <span class="dashboard-panel-title">{{ projectHubRoleKey ? `${projectHubRoleLabel} · 工单` : "工单" }}</span>
               <span class="project-hub-muted">共 {{ projectHubFilteredTickets.length }} 条</span>
               <button
                 type="button"
@@ -202,8 +206,8 @@
         <el-card class="project-hub-stats-card">
           <template #header>
             <div class="project-hub-card-head">
-              <div class="dashboard-panel-title">数据与报表</div>
-              <div class="report-toolbar">
+              <div class="dashboard-panel-title">{{ projectHubRoleKey ? `${projectHubRoleLabel} · 岗位数据` : "数据与报表" }}</div>
+              <div v-if="!projectHubRoleKey" class="report-toolbar">
                 <el-radio-group
                   :model-value="analytics.range_days"
                   size="small"
@@ -215,20 +219,35 @@
                 </el-radio-group>
                 <el-button size="small" text @click="loadAnalytics(currentProjectId, currentVersionId)">刷新</el-button>
               </div>
+              <el-button v-else size="small" text @click="loadAnalytics(currentProjectId, currentVersionId)">刷新报表</el-button>
             </div>
           </template>
           <div class="report-metric-grid">
-            <div class="report-metric-item"><div class="report-metric-label">工单总数</div><div class="report-metric-value">{{ analytics.progress.summary?.total || 0 }}</div></div>
-            <div class="report-metric-item"><div class="report-metric-label">进行中</div><div class="report-metric-value">{{ analytics.progress.summary?.in_progress || 0 }}</div></div>
-            <div class="report-metric-item"><div class="report-metric-label">已完成</div><div class="report-metric-value">{{ analytics.progress.summary?.done || 0 }}</div></div>
-            <div class="report-metric-item"><div class="report-metric-label">完成率</div><div class="report-metric-value">{{ analytics.progress.summary?.completion_rate || 0 }}%</div></div>
-            <div class="report-metric-item"><div class="report-metric-label">逾期</div><div class="report-metric-value">{{ analytics.progress.summary?.overdue || 0 }}</div></div>
-            <div class="report-metric-item"><div class="report-metric-label">即将逾期</div><div class="report-metric-value">{{ analytics.progress.summary?.due_soon || 0 }}</div></div>
+            <template v-if="projectHubRoleKey">
+              <div class="report-metric-item"><div class="report-metric-label">相关工单</div><div class="report-metric-value">{{ projectHubRoleStats.total }}</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">进行中</div><div class="report-metric-value">{{ projectHubRoleStats.in_progress }}</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">已完成</div><div class="report-metric-value">{{ projectHubRoleStats.done }}</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">完成率</div><div class="report-metric-value">{{ projectHubRoleStats.completion_rate }}%</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">逾期(在制)</div><div class="report-metric-value">{{ projectHubRoleStats.overdue }}</div></div>
+            </template>
+            <template v-else>
+              <div class="report-metric-item"><div class="report-metric-label">工单总数</div><div class="report-metric-value">{{ analytics.progress.summary?.total || 0 }}</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">进行中</div><div class="report-metric-value">{{ analytics.progress.summary?.in_progress || 0 }}</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">已完成</div><div class="report-metric-value">{{ analytics.progress.summary?.done || 0 }}</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">完成率</div><div class="report-metric-value">{{ analytics.progress.summary?.completion_rate || 0 }}%</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">逾期</div><div class="report-metric-value">{{ analytics.progress.summary?.overdue || 0 }}</div></div>
+              <div class="report-metric-item"><div class="report-metric-label">即将逾期</div><div class="report-metric-value">{{ analytics.progress.summary?.due_soon || 0 }}</div></div>
+            </template>
+          </div>
+          <div v-if="projectHubRoleKey && roleStatusEntries.length" class="project-role-status-bar">
+            <span v-for="item in roleStatusEntries" :key="item.status" class="project-role-status-chip">
+              {{ item.status }} {{ item.count }}
+            </span>
           </div>
           <div class="stats-tables-compact">
             <div class="stats-subsection">
               <div class="stats-subtitle">风险预警</div>
-              <el-table :data="analytics.risk.items || []" stripe size="small" max-height="190">
+              <el-table :data="projectHubRoleKey ? projectHubRoleRiskItems : (analytics.risk.items || [])" stripe size="small" max-height="190">
                 <el-table-column label="风险" width="92">
                   <template #default="scope">
                     <el-tag size="small" :type="getRiskTagType(scope.row.risk_type)">{{ scope.row.risk_type }}</el-tag>
@@ -242,13 +261,29 @@
             </div>
             <div class="stats-subsection">
               <div class="stats-subtitle report-row-head">
-                <span>人力负载</span>
-                <el-radio-group :model-value="analytics.workload_group_by" size="small" @update:model-value="onAnalyticsWorkloadGroupChange">
+                <span>{{ projectHubRoleKey ? "岗位成员在制" : "人力负载" }}</span>
+                <el-radio-group
+                  v-if="!projectHubRoleKey"
+                  :model-value="analytics.workload_group_by"
+                  size="small"
+                  @update:model-value="onAnalyticsWorkloadGroupChange"
+                >
                   <el-radio-button value="position">岗位</el-radio-button>
                   <el-radio-button value="user">个人</el-radio-button>
                 </el-radio-group>
               </div>
-              <el-table :data="workloadRows" stripe size="small" max-height="190">
+              <el-table
+                v-if="projectHubRoleKey"
+                :data="projectHubRoleMemberRows"
+                stripe
+                size="small"
+                max-height="190"
+              >
+                <el-table-column prop="user_name" label="成员" min-width="100" show-overflow-tooltip />
+                <el-table-column prop="position" label="岗位" width="100" />
+                <el-table-column prop="active_ticket_count" label="在制" width="72" />
+              </el-table>
+              <el-table v-else :data="workloadRows" stripe size="small" max-height="190">
                 <el-table-column v-if="analytics.workload_group_by === 'position'" prop="label" label="岗位" width="90" />
                 <el-table-column v-else prop="user_name" label="成员" width="90" show-overflow-tooltip />
                 <el-table-column prop="active_ticket_count" label="在制" width="60" />
@@ -257,9 +292,24 @@
                 </el-table-column>
                 <el-table-column prop="overdue_in_charge" label="逾期" width="60" />
               </el-table>
+              <el-table
+                v-if="projectHubRoleKey && projectHubRoleWorkloadRows.length"
+                :data="projectHubRoleWorkloadRows"
+                stripe
+                size="small"
+                max-height="160"
+                class="project-role-workload-extra"
+              >
+                <el-table-column prop="label" label="岗位汇总" width="100" />
+                <el-table-column prop="active_ticket_count" label="在制" width="60" />
+                <el-table-column prop="weighted_load" label="负载" width="66">
+                  <template #default="scope">{{ Number(scope.row.weighted_load || 0).toFixed(1) }}</template>
+                </el-table-column>
+                <el-table-column prop="overdue_in_charge" label="逾期" width="60" />
+              </el-table>
             </div>
           </div>
-          <div class="stats-subsection density-section">
+          <div v-if="!projectHubRoleKey" class="stats-subsection density-section">
             <div class="stats-subtitle report-row-head">
               <span>个人任务密集度</span>
               <div class="density-filters">
@@ -318,11 +368,11 @@
         <el-card class="project-hub-dynamics-card">
           <template #header>
             <div class="project-hub-card-head">
-              <span class="dashboard-panel-title">项目动态</span>
+              <span class="dashboard-panel-title">{{ projectHubRoleKey ? `${projectHubRoleLabel} · 人员动态` : "项目动态" }}</span>
               <el-button size="small" text @click="loadProjectHub(currentProjectId)">刷新</el-button>
             </div>
           </template>
-          <div v-if="(projectHub.dynamics || []).length > 0" class="dynamics-compact-scroll">
+          <div v-if="projectHubDisplayDynamics.length > 0" class="dynamics-compact-scroll">
             <div v-for="item in pagedProjectDynamics" :key="item.id" class="dynamic-compact">
               <div class="dynamic-compact-line1">
                 <span class="dynamic-compact-ref">#{{ item.ticket_id }}</span>
@@ -332,19 +382,19 @@
               <div class="dynamic-compact-line2">{{ item.editor_name }} · {{ item.summary }}</div>
             </div>
           </div>
-          <el-empty v-else description="暂无动态" :image-size="56" />
-          <div v-if="(projectHub.dynamics || []).length > projectDynamicsPageSize" class="project-hub-dynamics-pagination">
+          <el-empty v-else :description="projectHubRoleKey ? '暂无该岗位人员动态' : '暂无动态'" :image-size="56" />
+          <div v-if="projectHubDisplayDynamics.length > projectDynamicsPageSize" class="project-hub-dynamics-pagination">
             <el-pagination
               background
               small
               layout="total, prev, pager, next"
-              :total="(projectHub.dynamics || []).length"
+              :total="projectHubDisplayDynamics.length"
               :page-size="projectDynamicsPageSize"
               v-model:current-page="projectDynamicsPage"
             />
           </div>
         </el-card>
-        <el-card class="project-hub-version-card">
+        <el-card v-if="!projectHubRoleKey" class="project-hub-version-card">
           <template #header><div class="dashboard-panel-title">版本管理</div></template>
           <el-collapse class="version-manage-collapse">
             <el-collapse-item title="展开管理版本（创建/删除）" name="manage">
@@ -375,7 +425,7 @@
             </el-collapse-item>
           </el-collapse>
         </el-card>
-        <el-card class="project-hub-info-card">
+        <el-card v-if="!projectHubRoleKey" class="project-hub-info-card">
           <template #header><div class="dashboard-panel-title">项目详情</div></template>
           <el-descriptions v-if="projectHub.selected_project" :column="1" border size="small">
             <el-descriptions-item label="项目名">{{ projectHub.selected_project.name }}</el-descriptions-item>
@@ -391,7 +441,7 @@
 </template>
 
 <script setup>
-import { inject } from "vue";
+import { computed, inject } from "vue";
 import { Filter } from "@element-plus/icons-vue";
 
 const appCtx = inject("appCtx");
@@ -401,6 +451,13 @@ if (!appCtx) {
 
 const {
   activeTab,
+  projectHubRoleKey,
+  projectHubRoleLabel,
+  projectHubRoleStats,
+  projectHubRoleMemberRows,
+  projectHubRoleRiskItems,
+  projectHubRoleWorkloadRows,
+  projectHubDisplayDynamics,
   projectHubFilteredTickets,
   projectHubFilterExpanded,
   projectHubFiltersActive,
@@ -450,6 +507,11 @@ const {
   versions,
   removeVersion,
 } = appCtx;
+
+const roleStatusEntries = computed(() => {
+  const map = projectHubRoleStats?.by_status || {};
+  return Object.entries(map).map(([status, count]) => ({ status, count }));
+});
 </script>
 
 <style scoped>
@@ -498,12 +560,59 @@ const {
   color: #337ecc;
 }
 
+.project-hub-role-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e6e8ec;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
 .project-hub-main {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.55fr);
   gap: 12px;
   align-items: stretch;
   min-height: 680px;
+}
+
+.project-hub-main.is-role-view {
+  grid-template-columns: minmax(0, 1.25fr) minmax(240px, 0.42fr);
+  align-items: start;
+}
+
+.project-hub-main.is-role-view .project-hub-side-column {
+  position: sticky;
+  top: 12px;
+}
+
+.project-hub-main.is-role-view .project-hub-dynamics-card {
+  min-height: 320px;
+}
+
+.project-role-status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.project-role-status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #e6e8ec;
+  background: #f8fafc;
+  font-size: var(--tf-font-caption);
+  color: #475569;
+}
+
+.project-role-workload-extra {
+  margin-top: 10px;
 }
 
 .project-hub-main-column {
