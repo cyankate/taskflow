@@ -5,8 +5,8 @@
       <span class="project-hub-muted">按需求子类型与相关成员岗位筛选</span>
     </div>
     <div class="project-hub-main" :class="{ 'is-role-view': !!projectHubRoleKey }">
-      <div class="project-hub-main-column">
-        <el-card class="project-hub-tickets-card">
+      <div class="project-hub-main-column" :class="{ 'is-timeline-mode': projectHubTicketViewMode === 'timeline' }">
+        <el-card class="project-hub-tickets-card" :class="{ 'is-timeline-mode': projectHubTicketViewMode === 'timeline' }">
           <template #header>
             <div class="project-hub-card-head project-hub-tickets-head">
               <span class="dashboard-panel-title">{{ projectHubRoleKey ? `${projectHubRoleLabel} · 工单` : "工单" }}</span>
@@ -25,20 +25,20 @@
                 <button
                   type="button"
                   class="project-view-icon-btn"
+                  :class="{ active: projectHubTicketViewMode === 'timeline' }"
+                  title="时间轴"
+                  @click="onProjectHubViewModeChange('timeline')"
+                >
+                  <el-icon aria-hidden="true"><Calendar /></el-icon>
+                </button>
+                <button
+                  type="button"
+                  class="project-view-icon-btn"
                   :class="{ active: projectHubTicketViewMode === 'list' }"
                   title="列表视图"
                   @click="onProjectHubViewModeChange('list')"
                 >
                   <span aria-hidden="true">☰</span>
-                </button>
-                <button
-                  type="button"
-                  class="project-view-icon-btn"
-                  :class="{ active: projectHubTicketViewMode === 'kanban' }"
-                  title="看板视图"
-                  @click="onProjectHubViewModeChange('kanban')"
-                >
-                  <span aria-hidden="true">▦</span>
                 </button>
               </div>
             </div>
@@ -170,26 +170,7 @@
               </el-table-column>
             </el-table>
           </div>
-          <div v-show="projectHubTicketViewMode === 'kanban'" class="project-kanban">
-            <div v-for="col in kanbanColumns" :key="col.status" class="project-kanban-column">
-              <div class="project-kanban-column-head">{{ col.status }} · {{ col.tickets.length }}</div>
-              <div class="project-kanban-cards">
-                <div
-                  v-for="t in col.tickets"
-                  :key="t.id"
-                  class="project-kanban-card"
-                  @click="handleTicketRowClick(t)"
-                >
-                  <div class="project-kanban-card-title">{{ t.title }}</div>
-                  <div class="project-kanban-card-meta">
-                    <el-tag size="small" effect="plain">{{ t.ticket_type }}</el-tag>
-                    <span class="project-kanban-priority">{{ t.priority }}</span>
-                  </div>
-                </div>
-                <el-empty v-if="!col.tickets.length" description="无" :image-size="48" class="project-kanban-empty" />
-              </div>
-            </div>
-          </div>
+          <ProjectHubTimeline v-show="projectHubTicketViewMode === 'timeline'" />
           <div v-show="projectHubTicketViewMode === 'list'" class="project-hub-pagination">
             <el-pagination
               background
@@ -442,7 +423,8 @@
 
 <script setup>
 import { computed, inject } from "vue";
-import { Filter } from "@element-plus/icons-vue";
+import { Calendar, Filter } from "@element-plus/icons-vue";
+import ProjectHubTimeline from "./ProjectHubTimeline.vue";
 
 const appCtx = inject("appCtx");
 if (!appCtx) {
@@ -478,7 +460,6 @@ const {
   formatDynamicTime,
   onProjectHubRowAction,
   user,
-  kanbanColumns,
   ticketPageSize,
   ticketPage,
   analytics,
@@ -517,6 +498,29 @@ const roleStatusEntries = computed(() => {
 <style scoped>
 .project-hub-tickets-card {
   position: relative;
+}
+
+.project-hub-main-column.is-timeline-mode .project-hub-tickets-card.is-timeline-mode {
+  display: flex;
+  flex-direction: column;
+  min-height: min(calc(100vh - 120px), 960px);
+}
+
+.project-hub-main-column.is-timeline-mode .project-hub-tickets-card.is-timeline-mode :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.project-hub-main.is-role-view .project-hub-main-column.is-timeline-mode .project-hub-tickets-card.is-timeline-mode {
+  min-height: min(calc(100vh - 160px), 880px);
+}
+
+.project-hub-main.is-role-view .project-hub-main-column.is-timeline-mode :deep(.hub-timeline-scroll) {
+  min-height: min(calc(100vh - 400px), 520px);
+  max-height: min(calc(100vh - 360px), 620px);
+  height: min(calc(100vh - 360px), 620px);
 }
 
 .project-hub-tickets-card,
@@ -577,11 +581,6 @@ const roleStatusEntries = computed(() => {
   gap: 12px;
   align-items: stretch;
   min-height: 680px;
-}
-
-.project-hub-main.is-role-view {
-  grid-template-columns: minmax(0, 1.25fr) minmax(240px, 0.42fr);
-  align-items: start;
 }
 
 .project-hub-main.is-role-view .project-hub-side-column {
@@ -725,6 +724,10 @@ const roleStatusEntries = computed(() => {
   background: #f4f8ff;
 }
 
+.project-view-icon-btn .el-icon {
+  font-size: 16px;
+}
+
 .project-filter-active-dot {
   position: absolute;
   right: 5px;
@@ -751,78 +754,6 @@ const roleStatusEntries = computed(() => {
 
 .project-row-more-btn {
   font-size: var(--tf-font-body);
-}
-
-.project-kanban {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  min-height: 280px;
-}
-
-.project-kanban-column {
-  flex: 0 0 220px;
-  min-width: 0;
-  max-height: 520px;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid #e6e8ec;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.project-kanban-column-head {
-  font-size: var(--tf-font-subtitle);
-  font-weight: 500;
-  padding: 8px 10px;
-  border-bottom: 1px solid #eef1f4;
-  background: #fff;
-  border-radius: 8px 8px 0 0;
-}
-
-.project-kanban-cards {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 8px;
-}
-
-.project-kanban-card {
-  border: 1px solid #e6e8ec;
-  border-radius: 8px;
-  padding: 8px;
-  background: #fff;
-  margin-bottom: 8px;
-  cursor: pointer;
-}
-
-.project-kanban-card:hover {
-  border-color: #d4d9e1;
-  background: #fcfcfd;
-}
-
-.project-kanban-card-title {
-  font-size: var(--tf-font-subtitle);
-  color: #303133;
-  margin-bottom: 6px;
-}
-
-.project-kanban-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--tf-font-caption);
-  color: #94a3b8;
-}
-
-.project-kanban-priority {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.project-kanban-empty {
-  padding: 8px 0;
 }
 
 .project-hub-pagination {

@@ -15,7 +15,7 @@ export function useProjectHubPageState({
   densityMaxOverlap,
 }) {
   function onProjectHubViewModeChange(nextMode) {
-    projectHubTicketViewMode.value = nextMode || "list";
+    projectHubTicketViewMode.value = nextMode || "timeline";
   }
 
   function onProjectHubFilterChange() {

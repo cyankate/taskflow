@@ -123,7 +123,7 @@ export function useTaskflowApp() {
     priorities: ["低", "中", "高", "紧急"],
   });
 
-  const projectHubTicketViewMode = ref("list");
+  const projectHubTicketViewMode = ref("timeline");
   const projectHubTicketTypeMode = ref("all");
   const projectHubRoleKey = ref(null);
   const projectNavExpanded = ref(true);
@@ -218,20 +218,6 @@ export function useTaskflowApp() {
     const roleKey = projectHubRoleKey.value;
     if (!roleKey) return list;
     return filterProjectRoleDynamics(list, users.value, roleKey);
-  });
-
-  const kanbanColumns = computed(() => {
-    const statuses = meta.ticket_status || [];
-    const byStatus = {};
-    for (const t of projectHubFilteredTickets.value) {
-      const st = t.status || "待处理";
-      if (!byStatus[st]) byStatus[st] = [];
-      byStatus[st].push(t);
-    }
-    return statuses.map((status) => ({
-      status,
-      tickets: byStatus[status] || [],
-    }));
   });
 
   const ticketFilter = reactive({ project_id: null, version_id: null });
@@ -991,7 +977,6 @@ export function useTaskflowApp() {
     PROJECT_ROLE_TABS,
     handleProjectNavClick,
     toggleProjectNavExpanded,
-    kanbanColumns,
     projectHub,
     versionForm,
     showVersionCreateForm,
