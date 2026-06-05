@@ -150,7 +150,7 @@
                 <template #default="scope">{{ scope.row.assignees.map((x) => x.display_name).join("、") || "—" }}</template>
               </el-table-column>
               <el-table-column label="截止" width="160">
-                <template #default="scope">{{ formatDynamicTime(scope.row.end_time) }}</template>
+                <template #default="scope">{{ formatDeadlineSlot(scope.row.end_time) }}</template>
               </el-table-column>
               <el-table-column label="操作" width="92" fixed="right" align="center">
                 <template #default="scope">
@@ -458,6 +458,7 @@ const {
   handleTicketRowClick,
   isTicketOverdue,
   formatDynamicTime,
+  formatDeadlineSlot,
   onProjectHubRowAction,
   user,
   ticketPageSize,

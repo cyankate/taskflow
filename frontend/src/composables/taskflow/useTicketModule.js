@@ -1,3 +1,5 @@
+import { applyTicketTimeSlotFields, serializeTicketTimePayload } from "./ticketTimeSlot";
+
 export function useTicketModule({
   api,
   ElMessage,
@@ -90,8 +92,17 @@ export function useTicketModule({
           related_task_id: null,
           start_time: "",
           end_time: "",
+          start_date: "",
+          start_period: "",
+          end_date: "",
+          end_period: "",
           attachments: [],
         };
+    if (row) {
+      ticketDialog.form.start_time = toDateInputFormat(row.start_time);
+      ticketDialog.form.end_time = toDateInputFormat(row.end_time);
+    }
+    applyTicketTimeSlotFields(ticketDialog.form);
     if (ticketDialog.form.ticket_type === "BUG单" && !ticketDialog.form.sub_type) {
       ticketDialog.form.sub_type = "BUG修复";
     }
@@ -155,7 +166,13 @@ export function useTicketModule({
         return;
       }
     }
-    const payload = { ...ticketDialog.form };
+    let payload;
+    try {
+      payload = serializeTicketTimePayload(ticketDialog.form);
+    } catch (err) {
+      ElMessage.warning(err.message || "请完整填写时间");
+      return;
+    }
     const isEditing = !!payload.id;
     if (payload.id) {
       await api.put(`/tickets/${payload.id}`, payload);
@@ -221,8 +238,13 @@ export function useTicketModule({
       related_task_id: ticket.related_task_id || null,
       start_time: toDateInputFormat(ticket.start_time),
       end_time: toDateInputFormat(ticket.end_time),
+      start_date: "",
+      start_period: "",
+      end_date: "",
+      end_period: "",
       attachments: normalizeAttachments(ticket.attachments),
     };
+    applyTicketTimeSlotFields(ticketDetail.editForm);
     ticketDetail.quickForm = {
       priority: ticket.priority || "中",
       executor_id: normalizeRoleId(ticket.executor_id),
@@ -299,7 +321,13 @@ export function useTicketModule({
       ElMessage.warning("请选择版本");
       return;
     }
-    const payload = { ...ticketDetail.editForm };
+    let payload;
+    try {
+      payload = serializeTicketTimePayload(ticketDetail.editForm);
+    } catch (err) {
+      ElMessage.warning(err.message || "请完整填写时间");
+      return;
+    }
     await api.put(`/tickets/${payload.id}`, payload);
     await Promise.all([openTicketDetail({ id: payload.id }), refreshAllData()]);
     ElMessage.success("工单更新成功");

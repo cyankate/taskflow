@@ -3,6 +3,7 @@
     <div class="hub-timeline-toolbar">
       <div class="hub-timeline-summary">
         <span>已排期 {{ model.summary.scheduled }} / {{ model.summary.total }}</span>
+        <span v-if="model.summary.hiddenScheduled">较早排期 {{ model.summary.hiddenScheduled }} 条未显示</span>
         <span v-if="model.summary.unscheduled">未排期 {{ model.summary.unscheduled }}</span>
         <span>跨今日 {{ model.summary.spanningToday }}</span>
       </div>

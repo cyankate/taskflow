@@ -40,10 +40,6 @@
         <el-button size="small" type="primary" plain @click="toggleTicketFollow">
           {{ ticketDetail.ticket.is_following ? "取消关注" : "关注工单" }}
         </el-button>
-        <el-button size="small" @click="ticketDetail.editing = !ticketDetail.editing">
-          {{ ticketDetail.editing ? "取消编辑" : "编辑工单" }}
-        </el-button>
-        <el-button v-if="ticketDetail.editing" size="small" type="primary" @click="saveTicketDetailEdit">提交保存</el-button>
       </div>
     </div>
     <div class="ticket-detail-layout">
@@ -51,6 +47,83 @@
         <div class="detail-stream-section ticket-description-block">
           <div class="ticket-description-head">
             <div class="ticket-description-title">工单描述</div>
+            <div class="ticket-description-center">
+              <div
+                v-if="
+                  (ticketDetail.ticket.available_actions || []).includes('start') ||
+                  (ticketDetail.ticket.available_actions || []).includes('submit') ||
+                  (ticketDetail.ticket.available_actions || []).includes('approve') ||
+                  (ticketDetail.ticket.available_actions || []).includes('reject') ||
+                  (ticketDetail.ticket.available_actions || []).includes('reopen')
+                "
+                class="ticket-flow-actions-row"
+              >
+                <el-button
+                  v-if="(ticketDetail.ticket.available_actions || []).includes('start')"
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="onTicketFlowAction('start')"
+                >
+                  开始
+                </el-button>
+                <el-button
+                  v-if="(ticketDetail.ticket.available_actions || []).includes('submit')"
+                  size="small"
+                  type="success"
+                  plain
+                  @click="onTicketFlowAction('submit')"
+                >
+                  提交
+                </el-button>
+                <el-button
+                  v-if="(ticketDetail.ticket.available_actions || []).includes('approve')"
+                  size="small"
+                  type="success"
+                  plain
+                  @click="onTicketFlowAction('approve')"
+                >
+                  通过
+                </el-button>
+                <el-button
+                  v-if="(ticketDetail.ticket.available_actions || []).includes('reject')"
+                  size="small"
+                  type="danger"
+                  plain
+                  @click="onTicketFlowAction('reject')"
+                >
+                  驳回
+                </el-button>
+                <el-button
+                  v-if="(ticketDetail.ticket.available_actions || []).includes('reopen')"
+                  size="small"
+                  type="warning"
+                  plain
+                  @click="onTicketFlowAction('reopen')"
+                >
+                  重开
+                </el-button>
+              </div>
+              <div class="ticket-edit-actions-row">
+                <el-button
+                  size="small"
+                  plain
+                  :type="ticketDetail.editing ? 'info' : 'primary'"
+                  @click="ticketDetail.editing = !ticketDetail.editing"
+                >
+                  {{ ticketDetail.editing ? "取消编辑" : "编辑工单" }}
+                </el-button>
+                <el-button
+                  v-if="ticketDetail.editing"
+                  size="small"
+                  type="success"
+                  plain
+                  @click="saveTicketDetailEdit"
+                >
+                  提交保存
+                </el-button>
+              </div>
+            </div>
             <div class="ticket-description-actions">
               <template v-if="ticketDetail.descriptionEditing">
                 <el-button
@@ -330,18 +403,11 @@
             </el-select>
           </el-form-item>
           <el-form-item label="时间">
-            <el-date-picker
-              v-model="ticketDetail.editForm.start_time"
-              value-format="YYYY-MM-DDTHH:mm:ss"
-              type="datetime"
-              placeholder="开始时间"
-            />
-            <el-date-picker
-              v-model="ticketDetail.editForm.end_time"
-              value-format="YYYY-MM-DDTHH:mm:ss"
-              type="datetime"
-              placeholder="结束时间"
-              class="ml8"
+            <TicketTimeSlotInputs
+              v-model:start-date="ticketDetail.editForm.start_date"
+              v-model:start-period="ticketDetail.editForm.start_period"
+              v-model:end-date="ticketDetail.editForm.end_date"
+              v-model:end-period="ticketDetail.editForm.end_period"
             />
           </el-form-item>
         </el-form>
@@ -505,64 +571,6 @@
       </div>
 
       <aside class="ticket-detail-side">
-        <div
-          v-if="
-            (ticketDetail.ticket.available_actions || []).includes('start') ||
-            (ticketDetail.ticket.available_actions || []).includes('submit') ||
-            (ticketDetail.ticket.available_actions || []).includes('approve') ||
-            (ticketDetail.ticket.available_actions || []).includes('reject') ||
-            (ticketDetail.ticket.available_actions || []).includes('reopen')
-          "
-          class="detail-side-block ticket-flow-actions"
-        >
-          <div class="ticket-flow-actions-row">
-            <el-button
-              v-if="(ticketDetail.ticket.available_actions || []).includes('start')"
-              size="default"
-              type="primary"
-              plain
-              @click="onTicketFlowAction('start')"
-            >
-              开始
-            </el-button>
-            <el-button
-              v-if="(ticketDetail.ticket.available_actions || []).includes('submit')"
-              size="default"
-              type="success"
-              plain
-              @click="onTicketFlowAction('submit')"
-            >
-              提交
-            </el-button>
-            <el-button
-              v-if="(ticketDetail.ticket.available_actions || []).includes('approve')"
-              size="default"
-              type="success"
-              plain
-              @click="onTicketFlowAction('approve')"
-            >
-              通过
-            </el-button>
-            <el-button
-              v-if="(ticketDetail.ticket.available_actions || []).includes('reject')"
-              size="default"
-              type="danger"
-              plain
-              @click="onTicketFlowAction('reject')"
-            >
-              驳回
-            </el-button>
-            <el-button
-              v-if="(ticketDetail.ticket.available_actions || []).includes('reopen')"
-              size="default"
-              type="warning"
-              plain
-              @click="onTicketFlowAction('reopen')"
-            >
-              重开
-            </el-button>
-          </div>
-        </div>
         <div class="detail-side-block">
           <div class="ticket-quick-edit">
             <div class="ticket-quick-row">
@@ -626,8 +634,8 @@
               </el-button>
               <span v-else>-</span>
             </el-descriptions-item>
-            <el-descriptions-item label="开始时间">{{ formatDynamicTime(ticketDetail.ticket.start_time) || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="完成时间">{{ formatDynamicTime(ticketDetail.ticket.end_time) || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="开始时间">{{ formatTicketTimeSlot(ticketDetail.ticket.start_time, 'start') || "-" }}</el-descriptions-item>
+            <el-descriptions-item label="完成时间">{{ formatTicketTimeSlot(ticketDetail.ticket.end_time, 'end') || "-" }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDynamicTime(ticketDetail.ticket.created_at) || "-" }}</el-descriptions-item>
             <el-descriptions-item label="更新时间">{{ formatDynamicTime(ticketDetail.ticket.updated_at) || "-" }}</el-descriptions-item>
           </el-descriptions>
@@ -725,6 +733,7 @@
 
 <script setup>
 import { inject } from "vue";
+import TicketTimeSlotInputs from "../shared/TicketTimeSlotInputs.vue";
 
 const appCtx = inject("appCtx");
 if (!appCtx) {
@@ -776,6 +785,7 @@ const {
   commentContentWithMentionsHtml,
   mentionDisplayNames,
   formatDynamicTime,
+  formatTicketTimeSlot,
   toggleReplyEditor,
   getCommentReplies,
   onReplyMentionIdsChange,
@@ -963,22 +973,33 @@ const {
 
 .ticket-description-title {
   font-weight: 600;
-  margin-bottom: 6px;
+  justify-self: start;
 }
 
 .ticket-description-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   margin-bottom: 8px;
+}
+
+.ticket-description-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  flex-wrap: wrap;
+  justify-self: center;
 }
 
 .ticket-description-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   flex-wrap: wrap;
+  justify-self: end;
 }
 
 .description-font-size-select {
@@ -1406,10 +1427,27 @@ const {
   padding-left: 20px;
 }
 
-.ticket-flow-actions-row {
+.ticket-flow-actions-row,
+.ticket-edit-actions-row {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
+}
+
+.ticket-flow-actions-row :deep(.el-button + .el-button),
+.ticket-edit-actions-row :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.ticket-flow-actions-row :deep(.el-button) {
+  min-width: 68px;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+.ticket-description-center:has(.ticket-flow-actions-row) .ticket-edit-actions-row {
+  margin-left: 24px;
 }
 
 .ticket-quick-edit {

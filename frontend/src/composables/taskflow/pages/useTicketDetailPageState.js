@@ -1,4 +1,5 @@
 import { nextTick, reactive, ref, unref, watch } from "vue";
+import { diffBusinessDaysToDeadline } from "../fileUtils";
 
 const DESCRIPTION_COLORS = [
   { label: "默认", value: "#303133" },
@@ -382,9 +383,7 @@ export function useTicketDetailPageState({
     if (!endTimeRaw) return "未设置截止";
     const endTime = new Date(endTimeRaw);
     if (Number.isNaN(endTime.getTime())) return "截止时间异常";
-    const diffMs = endTime.getTime() - Date.now();
-    const dayMs = 24 * 60 * 60 * 1000;
-    const diffDays = Math.ceil(diffMs / dayMs);
+    const diffDays = diffBusinessDaysToDeadline(endTime);
     if (diffDays < 0) return `已逾期 ${Math.abs(diffDays)} 天`;
     if (diffDays === 0) return "今天截止";
     return `剩余 ${diffDays} 天`;
@@ -395,9 +394,9 @@ export function useTicketDetailPageState({
     if (!endTimeRaw) return "neutral";
     const endTime = new Date(endTimeRaw);
     if (Number.isNaN(endTime.getTime())) return "neutral";
-    const diffMs = endTime.getTime() - Date.now();
-    if (diffMs < 0) return "overdue";
-    if (diffMs <= 2 * 24 * 60 * 60 * 1000) return "soon";
+    const diffDays = diffBusinessDaysToDeadline(endTime);
+    if (diffDays < 0) return "overdue";
+    if (diffDays <= 2) return "soon";
     return "normal";
   }
 

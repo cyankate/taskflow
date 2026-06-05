@@ -345,18 +345,11 @@
           </el-select>
         </el-form-item>
         <el-form-item label="时间">
-          <el-date-picker
-            v-model="ticketDialog.form.start_time"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            type="datetime"
-            placeholder="开始时间"
-          />
-          <el-date-picker
-            v-model="ticketDialog.form.end_time"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            type="datetime"
-            placeholder="结束时间"
-            class="ml8"
+          <TicketTimeSlotInputs
+            v-model:start-date="ticketDialog.form.start_date"
+            v-model:start-period="ticketDialog.form.start_period"
+            v-model:end-date="ticketDialog.form.end_date"
+            v-model:end-period="ticketDialog.form.end_period"
           />
         </el-form-item>
         <el-form-item label="附件">
@@ -571,8 +564,10 @@ import { useDashboardPageState } from "./composables/taskflow/pages/useDashboard
 import { useProjectHubPageState } from "./composables/taskflow/pages/useProjectHubPageState";
 import { useWikiPageState } from "./composables/taskflow/pages/useWikiPageState";
 import { useTicketDetailPageState } from "./composables/taskflow/pages/useTicketDetailPageState";
+import { useAppNavigationHistory } from "./composables/taskflow/useAppNavigationHistory";
 import { useEditorSelectionSync } from "./composables/taskflow/useEditorSelectionSync";
 import DashboardPage from "./components/pages/DashboardPage.vue";
+import TicketTimeSlotInputs from "./components/shared/TicketTimeSlotInputs.vue";
 import UsersPage from "./components/pages/UsersPage.vue";
 import ProjectsPage from "./components/pages/ProjectsPage.vue";
 import ProjectHubPage from "./components/pages/ProjectHubPage.vue";
@@ -583,6 +578,7 @@ import TicketDetailPage from "./components/pages/TicketDetailPage.vue";
 const {
   token,
   user,
+  appBootstrapped,
   activeTab,
   dashboardViewMode,
   currentProjectId,
@@ -615,7 +611,7 @@ const {
   handleProjectNavClick,
   toggleProjectNavExpanded,
   openNotificationCenter,
-  closeTicketDetail,
+  closeTicketDetail: closeTicketDetailCore,
   onNotificationItemClick,
   onNotificationFeedPageChange,
   markAllNotificationsRead,
@@ -703,6 +699,7 @@ const {
   pagedWikiArticles,
   formatDynamicTime,
   formatDeadlineSlot,
+  formatTicketTimeSlot,
   isImageAttachment,
   isVideoAttachment,
   openImagePreview,
@@ -941,6 +938,29 @@ const {
   FONT_SIZE_COMMAND_REVERSE_MAP,
 });
 
+const {
+  closeTicketDetailWithHistory,
+  backToWikiListWithHistory,
+} = useAppNavigationHistory({
+  token,
+  appBootstrapped,
+  activeTab,
+  projectHubRoleKey,
+  ticketDetail,
+  wikiDetail,
+  wikiViewMode,
+  openTicketDetail,
+  openWikiDetailRaw,
+});
+
+function closeTicketDetail() {
+  closeTicketDetailWithHistory(closeTicketDetailCore);
+}
+
+function backToWikiListFromHistory() {
+  backToWikiListWithHistory(backToWikiList);
+}
+
 provide("appCtx", {
   activeTab,
   user,
@@ -963,6 +983,7 @@ provide("appCtx", {
   getDashboardPriorityDotClass,
   getDashboardOwnerName,
   formatDeadlineSlot,
+  formatTicketTimeSlot,
   getDeadlineHintType,
   getDeadlineHint,
   filteredDashboardTasks,
@@ -1047,7 +1068,7 @@ provide("appCtx", {
   versions,
   removeVersion,
   wikiViewMode,
-  backToWikiList,
+  backToWikiList: backToWikiListFromHistory,
   wikiDetailEditing,
   openWikiDialog,
   wikiFilter,

@@ -46,6 +46,7 @@ import api, { getErrorMessage } from "../api";
 import {
   formatDeadlineSlot,
   formatDynamicTime,
+  formatTicketTimeSlot,
   isImageAttachment,
   isVideoAttachment,
   normalizeAttachments,
@@ -76,6 +77,7 @@ export function useTaskflowApp() {
     runBootstrap: (...args) => bootstrapRunner(...args),
   });
   const activeTab = ref("dashboard");
+  const appBootstrapped = ref(false);
   const dashboardViewMode = ref("current");
   const currentProjectId = ref(null);
   const currentVersionId = ref(null);
@@ -246,6 +248,10 @@ export function useTaskflowApp() {
       related_task_id: null,
       start_time: "",
       end_time: "",
+      start_date: "",
+      start_period: "",
+      end_date: "",
+      end_period: "",
       attachments: [],
     },
   });
@@ -275,6 +281,10 @@ export function useTaskflowApp() {
       related_task_id: null,
       start_time: "",
       end_time: "",
+      start_date: "",
+      start_period: "",
+      end_date: "",
+      end_period: "",
       attachments: [],
     },
     quickForm: {
@@ -649,7 +659,10 @@ export function useTaskflowApp() {
   });
 
   loadVersionsForTicketModule = loadVersions;
-  bootstrapRunner = bootstrap;
+  bootstrapRunner = async (...args) => {
+    await bootstrap(...args);
+    appBootstrapped.value = true;
+  };
 
   async function openNotificationCenter() {
     notificationDrawerVisible.value = true;
@@ -915,10 +928,11 @@ export function useTaskflowApp() {
   onMounted(async () => {
     if (token.value) {
       try {
-        await bootstrap();
+        await bootstrapRunner();
         lastPolledUnreadCount.value = Number(notification.unread_notification_count || 0);
         startNotificationPolling();
       } catch {
+        appBootstrapped.value = false;
         clearAuth();
       }
     }
@@ -931,6 +945,7 @@ export function useTaskflowApp() {
         lastPolledUnreadCount.value = Number(notification.unread_notification_count || 0);
         startNotificationPolling();
       } else {
+        appBootstrapped.value = false;
         clearNotificationPolling();
       }
     },
@@ -944,6 +959,7 @@ export function useTaskflowApp() {
   return {
     token,
     user,
+    appBootstrapped,
     activeTab,
     dashboardViewMode,
     currentProjectId,
@@ -1027,6 +1043,7 @@ export function useTaskflowApp() {
     pagedWikiArticles,
     formatDynamicTime,
     formatDeadlineSlot,
+    formatTicketTimeSlot,
     toDateInputFormat,
     normalizeAttachments,
     isImageAttachment,

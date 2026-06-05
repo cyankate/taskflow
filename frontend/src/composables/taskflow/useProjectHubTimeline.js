@@ -2,6 +2,9 @@ import { getProjectRoleTab } from "./projectRoleConfig";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const IN_PROGRESS_STATUS = new Set(["未开始", "进行中", "待处理", "待验收", "待测试"]);
+/** 时间轴默认可见窗口：过去 30 天 ~ 未来 30 天 */
+const DEFAULT_VIEW_PAST_DAYS = 30;
+const DEFAULT_VIEW_FUTURE_DAYS = 30;
 
 function parseDate(value) {
   if (!value) return null;
@@ -229,11 +232,15 @@ function buildTooltip(ticket, interval, overdue) {
   return lines.join("\n");
 }
 
-function computeRange(scheduledRows) {
+function intervalOverlapsViewWindow(interval, viewStart, viewEndInclusive) {
+  return interval.startDay <= viewEndInclusive && interval.endDay >= viewStart;
+}
+
+function computeRange(scheduledRows, viewStart) {
   const today = startOfDay(new Date());
   if (!scheduledRows.length) {
-    const rangeStart = addDays(today, -14);
-    const rangeEnd = addDays(today, 28);
+    const rangeStart = viewStart || addDays(today, -14);
+    const rangeEnd = addDays(today, DEFAULT_VIEW_FUTURE_DAYS + 1);
     return { rangeStart, rangeEnd, endInclusive: addDays(rangeEnd, -1) };
   }
   let minDay = scheduledRows[0].interval.startDay;
@@ -242,7 +249,10 @@ function computeRange(scheduledRows) {
     if (item.interval.startDay < minDay) minDay = item.interval.startDay;
     if (item.interval.rangeEndExclusive > maxExclusive) maxExclusive = item.interval.rangeEndExclusive;
   }
-  const rangeStart = addDays(startOfDay(minDay), -3);
+  let rangeStart = addDays(startOfDay(minDay), -3);
+  if (viewStart && rangeStart < viewStart) {
+    rangeStart = viewStart;
+  }
   const rangeEnd = addDays(startOfDay(maxExclusive), 7);
   return { rangeStart, rangeEnd, endInclusive: addDays(rangeEnd, -1) };
 }
@@ -256,7 +266,7 @@ function computeRange(scheduledRows) {
  */
 export function buildProjectHubTimelineModel({ tickets, users, roleKey, isOverdue }) {
   const list = tickets || [];
-  const scheduled = [];
+  const scheduledAll = [];
   const unscheduled = [];
 
   for (const ticket of list) {
@@ -266,12 +276,19 @@ export function buildProjectHubTimelineModel({ tickets, users, roleKey, isOverdu
       continue;
     }
     interval.ticket = ticket;
-    scheduled.push({ ticket, interval });
+    scheduledAll.push({ ticket, interval });
   }
 
-  const { rangeStart, rangeEnd, endInclusive } = computeRange(scheduled);
-  const totalDays = Math.max(1, Math.ceil((rangeEnd.getTime() - rangeStart.getTime()) / DAY_MS));
   const today = startOfDay(new Date());
+  const viewStart = addDays(today, -DEFAULT_VIEW_PAST_DAYS);
+  const viewEndInclusive = addDays(today, DEFAULT_VIEW_FUTURE_DAYS);
+  const scheduled = scheduledAll.filter(({ interval }) =>
+    intervalOverlapsViewWindow(interval, viewStart, viewEndInclusive),
+  );
+  const hiddenScheduled = scheduledAll.length - scheduled.length;
+
+  const { rangeStart, rangeEnd, endInclusive } = computeRange(scheduled, viewStart);
+  const totalDays = Math.max(1, Math.ceil((rangeEnd.getTime() - rangeStart.getTime()) / DAY_MS));
   const todayIdx = dayIndex(rangeStart, today);
   const todayPct = Math.max(0, Math.min((todayIdx / totalDays) * 100, 100));
 
@@ -360,6 +377,7 @@ export function buildProjectHubTimelineModel({ tickets, users, roleKey, isOverdu
       total: list.length,
       scheduled: scheduled.length,
       unscheduled: unscheduled.length,
+      hiddenScheduled,
       spanningToday,
     },
   };
