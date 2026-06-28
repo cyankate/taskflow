@@ -56,12 +56,51 @@
 
         <el-card shadow="never" class="console-tool-card console-tool-card-wide">
           <template #header><span class="console-card-title">发送指令</span></template>
-          <p class="console-card-desc">向服务器发送管理指令（Lua/文本协议依项目而定）。</p>
+          <p class="console-card-desc">
+            选择指令示例自动填充 JSON，补全玩家 ID 与参数后发送（玩家需在线）。
+          </p>
+          <div class="console-command-template-row mb12">
+            <el-select
+              v-model="selectedCommandTemplate"
+              class="console-command-template-select"
+              placeholder="选择指令示例"
+              clearable
+              filterable
+              :loading="commandTemplates.loading"
+              :disabled="!selectedGatewayId || !commandTemplates.list.length"
+              @change="applyCommandTemplate"
+            >
+              <el-option
+                v-for="t in commandTemplates.list"
+                :key="t.action"
+                :label="t.label || t.action"
+                :value="t.action"
+              >
+                <div class="console-command-option">
+                  <span class="console-command-option-label">{{ t.label || t.action }}</span>
+                  <span v-if="t.desc" class="console-command-option-desc">{{ t.desc }}</span>
+                </div>
+              </el-option>
+            </el-select>
+            <el-button
+              text
+              type="primary"
+              :loading="commandTemplates.loading"
+              :disabled="!selectedGatewayId"
+              @click="loadCommandTemplates"
+            >
+              刷新示例
+            </el-button>
+          </div>
+          <p v-if="commandTemplates.hint" class="console-card-desc console-command-hint">{{ commandTemplates.hint }}</p>
+          <p v-else-if="selectedCommandTemplateMeta?.desc" class="console-card-desc console-command-hint">
+            {{ selectedCommandTemplateMeta.desc }}
+          </p>
           <el-input
             v-model="consoleForms.command"
             type="textarea"
             :rows="5"
-            placeholder="输入指令内容..."
+            placeholder='先选择上方指令示例，或手动输入 JSON'
             class="mb12"
           />
           <div class="console-command-actions">
@@ -476,6 +515,11 @@ const {
   openHotReloadDiff,
   closeHotReloadDiff,
   sendSkynetCommand,
+  commandTemplates,
+  selectedCommandTemplate,
+  selectedCommandTemplateMeta,
+  loadCommandTemplates,
+  applyCommandTemplate,
   dbExplorerTableRows,
   isExpandableDbCellValue,
   formatDbCellPreview,
@@ -551,6 +595,34 @@ const {
 
 .console-command-actions {
   margin-bottom: 10px;
+}
+
+.console-command-template-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.console-command-template-select {
+  flex: 1;
+  min-width: 220px;
+  max-width: 420px;
+}
+
+.console-command-option {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.console-command-option-desc {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.console-command-hint {
+  margin-top: 0;
 }
 
 .console-result :deep(textarea) {

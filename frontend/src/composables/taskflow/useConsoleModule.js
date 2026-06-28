@@ -68,6 +68,14 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
     commandResult: "",
   });
 
+  const commandTemplates = reactive({
+    list: [],
+    loading: false,
+    hint: "",
+  });
+
+  const selectedCommandTemplate = ref("");
+
   function syncGatewaySelectionFromStorage() {
     const list = consoleStatus.gateways || [];
     if (!list.length) {
@@ -120,6 +128,7 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
         }
       });
     }
+    loadCommandTemplates();
   });
 
   async function loadConsoleStatus() {
@@ -138,6 +147,61 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
       syncGatewaySelectionFromStorage();
     } finally {
       consoleStatus.loaded = true;
+      await loadCommandTemplates();
+    }
+  }
+
+  async function loadCommandTemplates() {
+    if (!selectedGatewayId.value) {
+      commandTemplates.list = [];
+      commandTemplates.hint = "";
+      selectedCommandTemplate.value = "";
+      return;
+    }
+    commandTemplates.loading = true;
+    commandTemplates.hint = "";
+    try {
+      const { data } = await api.get("/console/skynet/command/templates", {
+        params: { gateway_id: selectedGatewayId.value },
+      });
+      if (!data?.ok) {
+        commandTemplates.list = [];
+        commandTemplates.hint = data?.message || "加载指令示例失败";
+        return;
+      }
+      commandTemplates.list = Array.isArray(data.templates) ? data.templates : [];
+      if (!commandTemplates.list.length) {
+        commandTemplates.hint = "服务器未返回可用指令示例";
+      }
+    } catch (err) {
+      commandTemplates.list = [];
+      commandTemplates.hint = getErrorMessage(err, "加载指令示例失败");
+    } finally {
+      commandTemplates.loading = false;
+    }
+  }
+
+  const selectedCommandTemplateMeta = computed(() => {
+    const action = selectedCommandTemplate.value;
+    if (!action) return null;
+    return (commandTemplates.list || []).find((t) => t.action === action) || null;
+  });
+
+  function applyCommandTemplate(action) {
+    if (!action) {
+      return;
+    }
+    const tpl = (commandTemplates.list || []).find((t) => t.action === action);
+    if (!tpl || !tpl.template) {
+      ElMessage.warning("未找到指令模板");
+      return;
+    }
+    selectedCommandTemplate.value = action;
+    consoleForms.commandResult = "";
+    try {
+      consoleForms.command = JSON.stringify(tpl.template, null, 2);
+    } catch {
+      ElMessage.error("模板序列化失败");
     }
   }
 
@@ -568,8 +632,40 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
       ElMessage.warning("请输入要发送的内容");
       return;
     }
+    if (!selectedGatewayId.value) {
+      ElMessage.warning("请先选择服务器");
+      return;
+    }
+    let body;
+    try {
+      body = JSON.parse(cmd);
+    } catch {
+      ElMessage.error("请输入合法 JSON 指令");
+      return;
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      ElMessage.error("指令必须是 JSON 对象");
+      return;
+    }
     consoleForms.commandResult = "";
-    ElMessage.warning("指令发送功能暂未接入后端接口");
+    api
+      .post("/console/skynet/command", {
+        gateway_id: selectedGatewayId.value,
+        ...body,
+      })
+      .then(({ data }) => {
+        consoleForms.commandResult = JSON.stringify(data, null, 2);
+        if (data?.ok) {
+          ElMessage.success(data.message || "指令已发送");
+        } else {
+          ElMessage.error(data?.message || "指令执行失败");
+        }
+      })
+      .catch((err) => {
+        const msg = getErrorMessage(err);
+        consoleForms.commandResult = msg;
+        ElMessage.error(msg);
+      });
   }
 
   function isExpandableDbCellValue(value) {
@@ -611,12 +707,17 @@ export function useConsoleModule({ api, ElMessage, getErrorMessage }) {
   return {
     consoleStatus,
     consoleForms,
+    commandTemplates,
+    selectedCommandTemplate,
+    selectedCommandTemplateMeta,
     consoleSubView,
     dbExplorer,
     filterOperators,
     selectedGatewayId,
     currentSkynetGateway,
     loadConsoleStatus,
+    loadCommandTemplates,
+    applyCommandTemplate,
     openDbExplorer,
     closeDbExplorer,
     loadDbTables,

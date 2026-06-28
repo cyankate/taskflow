@@ -917,6 +917,53 @@ def console_hotreload_skynet_upload() -> Any:
     return jsonify({"ok": False, "message": last_error or "上传失败，请检查服务器 hotreload 接口动作名"}), 502
 
 
+@api_bp.post("/console/skynet/command")
+@auth_required(admin_only=True)
+def console_skynet_command() -> Any:
+    from taskflow.services import skynet_http_service as sk
+
+    payload = request.get_json(silent=True) or {}
+    gateway = _resolve_console_gateway(payload.get("gateway_id"))
+    if not gateway:
+        return jsonify({"ok": False, "message": "无效的 gateway_id"}), 400
+
+    body = {k: v for k, v in payload.items() if k != "gateway_id"}
+    action = str(body.get("action") or "").strip()
+    if not action:
+        return jsonify({"ok": False, "message": "缺少 action"}), 400
+
+    try:
+        raw = sk.post_command(gateway, body)
+    except Exception as exc:
+        current_app.logger.warning("Skynet command: %s", exc)
+        return jsonify({"ok": False, "message": f"请求服务器失败: {exc}"}), 502
+
+    ok, data, message = sk.normalize_command_response(raw)
+    if not ok:
+        err = message or str((data or {}).get("error") or "指令执行失败")
+        return jsonify({"ok": False, "message": err, "data": data}), 400
+    msg = message or "指令已执行"
+    return jsonify({"ok": True, "message": msg, "data": data})
+
+
+@api_bp.get("/console/skynet/command/templates")
+@auth_required(admin_only=True)
+def console_skynet_command_templates() -> Any:
+    from taskflow.services import skynet_http_service as sk
+
+    gateway = _resolve_console_gateway(request.args.get("gateway_id"))
+    if not gateway:
+        return jsonify({"ok": False, "message": "无效的 gateway_id", "templates": []}), 400
+    try:
+        templates, commands, err = sk.fetch_command_templates(gateway)
+    except Exception as exc:
+        current_app.logger.warning("Skynet command templates: %s", exc)
+        return jsonify({"ok": False, "message": f"请求服务器失败: {exc}", "templates": []}), 502
+    if err:
+        return jsonify({"ok": False, "message": err, "templates": [], "commands": commands}), 400
+    return jsonify({"ok": True, "templates": templates, "commands": commands})
+
+
 @api_bp.get("/users")
 @auth_required()
 def list_users() -> Any:

@@ -12,6 +12,8 @@ _DB_QUERY_PATH = "db/query"
 _DB_ACTION_FIELD = "action"
 _HOTRELOAD_API_PATH = "hotreload"
 _HOTRELOAD_ACTION_FIELD = "action"
+_COMMAND_API_PATH = "command"
+_COMMAND_ACTION_FIELD = "action"
 _HTTP_VERIFY_SSL = True
 _HTTP_TIMEOUT_SEC = 30.0
 
@@ -97,6 +99,14 @@ def skynet_hotreload_api_path() -> str:
 
 def skynet_hotreload_action_field() -> str:
     return _HOTRELOAD_ACTION_FIELD
+
+
+def skynet_command_api_path() -> str:
+    return _COMMAND_API_PATH
+
+
+def skynet_command_action_field() -> str:
+    return _COMMAND_ACTION_FIELD
 
 
 def console_gateways_from_config() -> list[dict[str, str]]:

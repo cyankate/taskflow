@@ -11,6 +11,7 @@ import requests
 
 from taskflow.config.skynet_settings import (
     skynet_api_prefix,
+    skynet_command_api_path,
     skynet_db_action_field,
     skynet_db_api_path,
     skynet_hotreload_api_path,
@@ -94,6 +95,12 @@ def _hotreload_unified_url(base: str) -> str:
     return build_skynet_web_url(base, *parts)
 
 
+def _command_unified_url(base: str) -> str:
+    path = skynet_command_api_path()
+    parts = [p for p in path.split("/") if p]
+    return build_skynet_web_url(base, *parts)
+
+
 def post_hotreload(gateway: dict[str, Any], body: dict[str, Any]) -> Any:
     """热更新统一入口 POST，body 由调用方按 Skynet 约定组装（含 action）。"""
     base = effective_skynet_base_url(gateway)
@@ -101,6 +108,47 @@ def post_hotreload(gateway: dict[str, Any], body: dict[str, Any]) -> Any:
         return None
     url = _hotreload_unified_url(base)
     return skynet_post_json(url, json_body=body)
+
+
+def post_command(gateway: dict[str, Any], body: dict[str, Any]) -> Any:
+    """GM 指令统一入口 POST，body 需含 action（add_items / activate_weapon / list）。"""
+    base = effective_skynet_base_url(gateway)
+    if not base:
+        return None
+    url = _command_unified_url(base)
+    return skynet_post_json(url, json_body=body)
+
+
+def normalize_command_response(raw: Any) -> tuple[bool, dict[str, Any], str]:
+    if raw is None:
+        return False, {}, "服务器无响应"
+    if not isinstance(raw, dict):
+        return False, {}, "响应格式无效"
+    if raw.get("error"):
+        return False, raw, str(raw.get("error"))
+    message = str(raw.get("message") or raw.get("msg") or "").strip()
+    ok = raw.get("ok")
+    if ok is None:
+        ok = "result" in raw or "commands" in raw or "templates" in raw
+    return bool(ok), raw, message
+
+
+def fetch_command_templates(gateway: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str], str]:
+    base = effective_skynet_base_url(gateway)
+    if not base:
+        return [], [], "未配置服务器 HTTP 地址"
+    raw = post_command(gateway, {"action": "list"})
+    if not isinstance(raw, dict):
+        return [], [], "响应格式无效"
+    if raw.get("error"):
+        return [], [], str(raw.get("error"))
+    templates = raw.get("templates")
+    commands = raw.get("commands")
+    if not isinstance(templates, list):
+        templates = []
+    if not isinstance(commands, list):
+        commands = []
+    return templates, commands, ""
 
 
 def normalize_tables_response(raw: Any) -> tuple[list[dict[str, str]], str]:
