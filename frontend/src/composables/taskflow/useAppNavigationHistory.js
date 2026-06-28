@@ -23,16 +23,16 @@ function navStatesEqual(a, b) {
 
 function buildHistoryUrl(nav) {
   const state = normalizeNav(nav);
-  if (state.ticket) return `#/ticket/${state.ticket}`;
-  if (state.wiki && state.tab === "wiki") return `#/wiki/${state.wiki}`;
+  if (state.ticket) return `/ticket/${state.ticket}`;
+  if (state.wiki && state.tab === "wiki") return `/wiki/${state.wiki}`;
   if (state.tab === "project_hub" && state.role) {
-    return `#/project_hub/${encodeURIComponent(state.role)}`;
+    return `/project_hub/${encodeURIComponent(state.role)}`;
   }
-  return `#/${state.tab}`;
+  return `/${state.tab}`;
 }
 
-function parseHistoryHash(hash) {
-  const raw = String(hash || "").replace(/^#/, "");
+function parseHistoryPath(pathname) {
+  const raw = String(pathname || "").split("?")[0].split("#")[0];
   const path = raw.startsWith("/") ? raw.slice(1) : raw;
   const parts = path.split("/").filter(Boolean);
   if (!parts.length) return { ...DEFAULT_NAV };
@@ -170,7 +170,7 @@ export function useAppNavigationHistory({
   async function onPopState(event) {
     if (typeof window === "undefined") return;
     appHistoryDepth = Math.max(0, appHistoryDepth - 1);
-    const nav = event.state?.taskflow ? event.state.nav : parseHistoryHash(window.location.hash);
+    const nav = event.state?.taskflow ? event.state.nav : parseHistoryPath(window.location.pathname);
     await applyNavState(nav || DEFAULT_NAV);
     lastPushedNav = serializeNavState();
   }
@@ -189,8 +189,8 @@ export function useAppNavigationHistory({
     syncingFromHistory = true;
     try {
       const fromState = history.state?.taskflow ? history.state.nav : null;
-      const fromHash = parseHistoryHash(window.location.hash);
-      const initialNav = fromState || fromHash;
+      const fromPath = parseHistoryPath(window.location.pathname);
+      const initialNav = fromState || fromPath;
       const hasDeepLink =
         initialNav.tab !== "dashboard" ||
         initialNav.role ||
