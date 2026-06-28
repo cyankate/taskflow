@@ -99,7 +99,7 @@
           <el-input
             v-model="consoleForms.command"
             type="textarea"
-            :rows="5"
+            :rows="8"
             placeholder='先选择上方指令示例，或手动输入 JSON'
             class="mb12"
           />

@@ -77,10 +77,18 @@ def skynet_post_json(url: str, *, json_body: dict[str, Any] | None = None) -> An
         timeout=_timeout_sec(),
         verify=_verify_ssl(),
     )
+    parsed: Any = {}
+    if r.content:
+        try:
+            parsed = r.json()
+        except ValueError:
+            parsed = {}
+    if r.ok:
+        return parsed if parsed is not None else {}
+    if isinstance(parsed, dict) and (parsed.get("error") or parsed.get("message") or parsed.get("msg")):
+        return parsed
     r.raise_for_status()
-    if not r.content:
-        return {}
-    return r.json()
+    return parsed if parsed is not None else {}
 
 
 def _db_unified_url(base: str) -> str:
