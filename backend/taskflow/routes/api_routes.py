@@ -955,13 +955,13 @@ def console_skynet_command_templates() -> Any:
     if not gateway:
         return jsonify({"ok": False, "message": "无效的 gateway_id", "templates": []}), 400
     try:
-        templates, commands, err = sk.fetch_command_templates(gateway)
+        templates, err = sk.fetch_command_templates(gateway)
     except Exception as exc:
         current_app.logger.warning("Skynet command templates: %s", exc)
         return jsonify({"ok": False, "message": f"请求服务器失败: {exc}", "templates": []}), 502
     if err:
-        return jsonify({"ok": False, "message": err, "templates": [], "commands": commands}), 400
-    return jsonify({"ok": True, "templates": templates, "commands": commands})
+        return jsonify({"ok": False, "message": err, "templates": []}), 400
+    return jsonify({"ok": True, "templates": templates})
 
 
 @api_bp.get("/users")

@@ -137,26 +137,23 @@ def normalize_command_response(raw: Any) -> tuple[bool, dict[str, Any], str]:
     message = str(raw.get("message") or raw.get("msg") or "").strip()
     ok = raw.get("ok")
     if ok is None:
-        ok = "result" in raw or "commands" in raw or "templates" in raw
+        ok = "result" in raw or "templates" in raw
     return bool(ok), raw, message
 
 
-def fetch_command_templates(gateway: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str], str]:
+def fetch_command_templates(gateway: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
     base = effective_skynet_base_url(gateway)
     if not base:
-        return [], [], "未配置服务器 HTTP 地址"
+        return [], "未配置服务器 HTTP 地址"
     raw = post_command(gateway, {"action": "list"})
     if not isinstance(raw, dict):
-        return [], [], "响应格式无效"
+        return [], "响应格式无效"
     if raw.get("error"):
-        return [], [], str(raw.get("error"))
+        return [], str(raw.get("error"))
     templates = raw.get("templates")
-    commands = raw.get("commands")
     if not isinstance(templates, list):
         templates = []
-    if not isinstance(commands, list):
-        commands = []
-    return templates, commands, ""
+    return templates, ""
 
 
 def normalize_tables_response(raw: Any) -> tuple[list[dict[str, str]], str]:
