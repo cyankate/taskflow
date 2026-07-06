@@ -144,6 +144,15 @@
           <button
             v-if="user.is_admin"
             class="side-nav-item"
+            :class="{ active: activeTab === 'loadtest' }"
+            @click="onSideNavClick('loadtest')"
+          >
+            <span class="side-nav-icon">⏱</span>
+            <span>压测台</span>
+          </button>
+          <button
+            v-if="user.is_admin"
+            class="side-nav-item"
             :class="{ active: activeTab === 'projects' }"
             @click="onSideNavClick('projects')"
           >
@@ -173,6 +182,8 @@
           <WikiPage />
 
           <ConsolePage />
+
+          <LoadTestPage />
           </div>
 
           <TicketDetailPage v-else key="content-detail" />
@@ -573,6 +584,7 @@ import ProjectsPage from "./components/pages/ProjectsPage.vue";
 import ProjectHubPage from "./components/pages/ProjectHubPage.vue";
 import WikiPage from "./components/pages/WikiPage.vue";
 import ConsolePage from "./components/pages/ConsolePage.vue";
+import LoadTestPage from "./components/pages/LoadTestPage.vue";
 import TicketDetailPage from "./components/pages/TicketDetailPage.vue";
 
 const {
@@ -680,6 +692,22 @@ const {
   isExpandableDbCellValue,
   formatDbCellPreview,
   formatDbCellExpanded,
+  loadTestStatus,
+  loadTestForm,
+  loadTestPresets,
+  loadTestRuns,
+  activeRunId,
+  activeRun,
+  loadTestLoading,
+  loadTestMetrics,
+  isRunActive,
+  bootstrapLoadTestPage,
+  loadLoadTestStatus,
+  loadLoadTestRuns,
+  startLoadTestRun,
+  stopLoadTestRun,
+  selectLoadTestRun,
+  formatRunStatus,
   analytics,
   workloadRows,
   densityCalendarWeeks,
@@ -1149,6 +1177,22 @@ provide("appCtx", {
   isExpandableDbCellValue,
   formatDbCellPreview,
   formatDbCellExpanded,
+  loadTestStatus,
+  loadTestForm,
+  loadTestPresets,
+  loadTestRuns,
+  activeRunId,
+  activeRun,
+  loadTestLoading,
+  loadTestMetrics,
+  isRunActive,
+  bootstrapLoadTestPage,
+  loadLoadTestStatus,
+  loadLoadTestRuns,
+  startLoadTestRun,
+  stopLoadTestRun,
+  selectLoadTestRun,
+  formatRunStatus,
   ticketDetail,
   closeTicketDetail,
   createSubTaskFromDetail,

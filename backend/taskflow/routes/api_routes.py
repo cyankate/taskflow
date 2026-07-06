@@ -964,6 +964,80 @@ def console_skynet_command_templates() -> Any:
     return jsonify({"ok": True, "templates": templates})
 
 
+@api_bp.get("/loadtest/status")
+@auth_required(admin_only=True)
+def loadtest_status() -> Any:
+    from taskflow.services import loadgen_service as lg
+
+    configured = lg.agent_configured()
+    ok, err = lg.fetch_health()
+    return jsonify({
+        "ok": ok,
+        "configured": configured,
+        "message": err if not ok else "agent 可用",
+    })
+
+
+@api_bp.get("/loadtest/presets")
+@auth_required(admin_only=True)
+def loadtest_presets() -> Any:
+    from taskflow.services import loadgen_service as lg
+
+    presets, err = lg.fetch_presets()
+    if err:
+        return jsonify({"ok": False, "message": err, "presets": []}), 502 if not lg.agent_configured() else 400
+    return jsonify({"ok": True, "presets": presets})
+
+
+@api_bp.get("/loadtest/runs")
+@auth_required(admin_only=True)
+def loadtest_list_runs() -> Any:
+    from taskflow.services import loadgen_service as lg
+
+    runs, err = lg.list_runs()
+    if err:
+        return jsonify({"ok": False, "message": err, "runs": []}), 502 if not lg.agent_configured() else 400
+    return jsonify({"ok": True, "runs": runs})
+
+
+@api_bp.get("/loadtest/runs/<run_id>")
+@auth_required(admin_only=True)
+def loadtest_get_run(run_id: str) -> Any:
+    from taskflow.services import loadgen_service as lg
+
+    run, err = lg.get_run(run_id)
+    if err:
+        code = 404 if "not found" in err.lower() else 502 if not lg.agent_configured() else 400
+        return jsonify({"ok": False, "message": err}), code
+    return jsonify({"ok": True, "run": run})
+
+
+@api_bp.post("/loadtest/runs")
+@auth_required(admin_only=True)
+def loadtest_start_run() -> Any:
+    from taskflow.services import loadgen_service as lg
+
+    payload = request.get_json(silent=True) or {}
+    body = {k: v for k, v in payload.items() if v is not None}
+    run, err = lg.start_run(body)
+    if err:
+        code = 409 if "active" in err.lower() else 502 if not lg.agent_configured() else 400
+        return jsonify({"ok": False, "message": err}), code
+    return jsonify({"ok": True, "run": run})
+
+
+@api_bp.post("/loadtest/runs/<run_id>/stop")
+@auth_required(admin_only=True)
+def loadtest_stop_run(run_id: str) -> Any:
+    from taskflow.services import loadgen_service as lg
+
+    run, err = lg.stop_run(run_id)
+    if err:
+        code = 404 if "not found" in err.lower() else 502 if not lg.agent_configured() else 400
+        return jsonify({"ok": False, "message": err}), code
+    return jsonify({"ok": True, "run": run})
+
+
 @api_bp.get("/users")
 @auth_required()
 def list_users() -> Any:

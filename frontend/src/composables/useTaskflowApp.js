@@ -56,6 +56,7 @@ import { useProjectModule } from "./taskflow/useProjectModule";
 import { useTicketModule } from "./taskflow/useTicketModule";
 import { useWikiModule } from "./taskflow/useWikiModule";
 import { useConsoleModule } from "./taskflow/useConsoleModule";
+import { useLoadTestModule } from "./taskflow/useLoadTestModule";
 import { useAuthState } from "./taskflow/useAuthState";
 import { usePaginationState } from "./taskflow/usePaginationState";
 import {
@@ -535,11 +536,37 @@ export function useTaskflowApp() {
     getErrorMessage,
   });
 
+  const {
+    loadTestStatus,
+    loadTestForm,
+    loadTestPresets,
+    loadTestRuns,
+    activeRunId,
+    activeRun,
+    loadTestLoading,
+    loadTestMetrics,
+    isRunActive,
+    bootstrapLoadTestPage,
+    loadLoadTestStatus,
+    loadLoadTestRuns,
+    startLoadTestRun,
+    stopLoadTestRun,
+    selectLoadTestRun,
+    formatRunStatus,
+  } = useLoadTestModule({
+    api,
+    ElMessage,
+    getErrorMessage,
+  });
+
   watch(
     () => activeTab.value,
     (tab) => {
       if (tab === "console") {
         loadConsoleStatus();
+      }
+      if (tab === "loadtest") {
+        bootstrapLoadTestPage();
       }
     },
   );
@@ -1146,6 +1173,22 @@ export function useTaskflowApp() {
     isExpandableDbCellValue,
     formatDbCellPreview,
     formatDbCellExpanded,
+    loadTestStatus,
+    loadTestForm,
+    loadTestPresets,
+    loadTestRuns,
+    activeRunId,
+    activeRun,
+    loadTestLoading,
+    loadTestMetrics,
+    isRunActive,
+    bootstrapLoadTestPage,
+    loadLoadTestStatus,
+    loadLoadTestRuns,
+    startLoadTestRun,
+    stopLoadTestRun,
+    selectLoadTestRun,
+    formatRunStatus,
     openUserDialog,
     saveUser,
     removeUser,
